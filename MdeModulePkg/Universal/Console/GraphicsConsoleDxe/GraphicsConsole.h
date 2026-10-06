@@ -52,6 +52,7 @@ typedef struct {
   UINT32    GopWidth;
   UINT32    GopHeight;
   UINT32    GopModeNumber;
+  UINT32    GlyphScale;
 } GRAPHICS_CONSOLE_MODE_DATA;
 
 typedef struct {

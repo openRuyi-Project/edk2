@@ -59,6 +59,7 @@
   gEfiHiiDatabaseProtocolGuid
 
 [Pcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGlyphScale
   gEfiMdeModulePkgTokenSpaceGuid.PcdVideoHorizontalResolution ## SOMETIMES_CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdVideoVerticalResolution   ## SOMETIMES_CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow                 ## SOMETIMES_CONSUMES

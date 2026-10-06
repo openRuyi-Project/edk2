@@ -1800,6 +1800,10 @@
   # @Prompt Console output row.
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow|25|UINT32|0x40000006
 
+  ## Maximum integer glyph scale for the graphics text console. A value of 1
+  #  preserves the standard glyph size. Modes always retain at least 80x25.
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGlyphScale|1|UINT32|0x40000150
+
   ## This PCD defines the Console output column. The default value is 80 according to UEFI spec.
   #  This PCD could be set to 0 then console output would be at max column and max row.
   # @Prompt Console output column.
