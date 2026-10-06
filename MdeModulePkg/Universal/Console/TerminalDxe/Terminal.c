@@ -321,15 +321,37 @@ InitializeTerminalConsoleTextMode (
   )
 {
   TERMINAL_CONSOLE_MODE_DATA  *TextModeData;
+  UINT32                     Columns;
+  UINT32                     Rows;
+  UINTN                      Mode;
 
   ASSERT (TextModeCount != NULL);
 
-  TextModeData = AllocateCopyPool (sizeof (mTerminalConsoleModeData), mTerminalConsoleModeData);
+  TextModeData = AllocateZeroPool (sizeof (mTerminalConsoleModeData) + sizeof (*TextModeData));
   if (TextModeData == NULL) {
     return NULL;
   }
 
+  CopyMem (TextModeData, mTerminalConsoleModeData, sizeof (mTerminalConsoleModeData));
   *TextModeCount = ARRAY_SIZE (mTerminalConsoleModeData);
+  Columns        = PcdGet32 (PcdConOutColumn);
+  Rows           = PcdGet32 (PcdConOutRow);
+  for (Mode = 0; Mode < (UINTN)*TextModeCount; Mode++) {
+    if ((TextModeData[Mode].Columns == Columns) && (TextModeData[Mode].Rows == Rows)) {
+      break;
+    }
+  }
+
+  //
+  // Terminal resize escape sequences have three decimal digits per axis.
+  //
+  if ((Mode == (UINTN)*TextModeCount) && (Columns >= 80) && (Columns <= 999) &&
+      (Rows >= 25) && (Rows <= 999))
+  {
+    TextModeData[Mode].Columns = Columns;
+    TextModeData[Mode].Rows = Rows;
+    (*TextModeCount)++;
+  }
 
   DEBUG_CODE_BEGIN ();
   INT32  Index;

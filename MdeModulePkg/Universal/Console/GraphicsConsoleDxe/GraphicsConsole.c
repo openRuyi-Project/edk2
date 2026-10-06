@@ -222,6 +222,7 @@ InitializeGraphicsConsoleTextMode (
   UINTN                       ValidIndex;
   UINTN                       MaxColumns;
   UINTN                       MaxRows;
+  UINT32                      Scale;
 
   if ((TextModeCount == NULL) || (TextModeData == NULL)) {
     return EFI_INVALID_PARAMETER;
@@ -233,8 +234,13 @@ InitializeGraphicsConsoleTextMode (
   // Compute the maximum number of text Rows and Columns that this current graphics mode can support.
   // To make graphics console work well, MaxColumns and MaxRows should not be zero.
   //
-  MaxColumns = HorizontalResolution / EFI_GLYPH_WIDTH;
-  MaxRows    = VerticalResolution / EFI_GLYPH_HEIGHT;
+  Scale = MIN (
+            HorizontalResolution / (80 * EFI_GLYPH_WIDTH),
+            VerticalResolution / (25 * EFI_GLYPH_HEIGHT)
+            );
+  Scale = MAX (1, MIN (Scale, PcdGet32 (PcdConOutGlyphScale)));
+  MaxColumns = HorizontalResolution / (EFI_GLYPH_WIDTH * Scale);
+  MaxRows    = VerticalResolution / (EFI_GLYPH_HEIGHT * Scale);
 
   //
   // According to UEFI spec, all output devices support at least 80x25 text mode.
@@ -273,15 +279,15 @@ InitializeGraphicsConsoleTextMode (
   NewModeBuffer[ValidCount].GopWidth      = HorizontalResolution;
   NewModeBuffer[ValidCount].GopHeight     = VerticalResolution;
   NewModeBuffer[ValidCount].GopModeNumber = GopModeNumber;
-  NewModeBuffer[ValidCount].DeltaX        = (HorizontalResolution - (NewModeBuffer[ValidCount].Columns * EFI_GLYPH_WIDTH)) >> 1;
-  NewModeBuffer[ValidCount].DeltaY        = (VerticalResolution - (NewModeBuffer[ValidCount].Rows * EFI_GLYPH_HEIGHT)) >> 1;
+  NewModeBuffer[ValidCount].DeltaX        = (HorizontalResolution - (NewModeBuffer[ValidCount].Columns * EFI_GLYPH_WIDTH * Scale)) >> 1;
+  NewModeBuffer[ValidCount].DeltaY        = (VerticalResolution - (NewModeBuffer[ValidCount].Rows * EFI_GLYPH_HEIGHT * Scale)) >> 1;
   ValidCount++;
 
   if ((MaxColumns >= 80) && (MaxRows >= 50)) {
     NewModeBuffer[ValidCount].Columns = 80;
     NewModeBuffer[ValidCount].Rows    = 50;
-    NewModeBuffer[ValidCount].DeltaX  = (HorizontalResolution - (80 * EFI_GLYPH_WIDTH)) >> 1;
-    NewModeBuffer[ValidCount].DeltaY  = (VerticalResolution - (50 * EFI_GLYPH_HEIGHT)) >> 1;
+    NewModeBuffer[ValidCount].DeltaX  = (HorizontalResolution - (80 * EFI_GLYPH_WIDTH * Scale)) >> 1;
+    NewModeBuffer[ValidCount].DeltaY  = (VerticalResolution - (50 * EFI_GLYPH_HEIGHT * Scale)) >> 1;
   }
 
   NewModeBuffer[ValidCount].GopWidth      = HorizontalResolution;
@@ -319,10 +325,14 @@ InitializeGraphicsConsoleTextMode (
       NewModeBuffer[ValidCount].GopWidth      = HorizontalResolution;
       NewModeBuffer[ValidCount].GopHeight     = VerticalResolution;
       NewModeBuffer[ValidCount].GopModeNumber = GopModeNumber;
-      NewModeBuffer[ValidCount].DeltaX        = (HorizontalResolution - (NewModeBuffer[ValidCount].Columns * EFI_GLYPH_WIDTH)) >> 1;
-      NewModeBuffer[ValidCount].DeltaY        = (VerticalResolution - (NewModeBuffer[ValidCount].Rows * EFI_GLYPH_HEIGHT)) >> 1;
+      NewModeBuffer[ValidCount].DeltaX        = (HorizontalResolution - (NewModeBuffer[ValidCount].Columns * EFI_GLYPH_WIDTH * Scale)) >> 1;
+      NewModeBuffer[ValidCount].DeltaY        = (VerticalResolution - (NewModeBuffer[ValidCount].Rows * EFI_GLYPH_HEIGHT * Scale)) >> 1;
       ValidCount++;
     }
+  }
+
+  for (Index = 0; Index < ValidCount; Index++) {
+    NewModeBuffer[Index].GlyphScale = Scale;
   }
 
   DEBUG_CODE_BEGIN ();
@@ -848,6 +858,8 @@ GraphicsConsoleConOutOutputString (
   UINTN                          MaxRow;
   UINTN                          Width;
   UINTN                          Height;
+  UINTN                          GlyphWidth;
+  UINTN                          GlyphHeight;
   UINTN                          Delta;
   EFI_STATUS                     Status;
   BOOLEAN                        Warning;
@@ -881,8 +893,10 @@ GraphicsConsoleConOutOutputString (
   MaxRow    = Private->ModeData[Mode].Rows;
   DeltaX    = (UINTN)Private->ModeData[Mode].DeltaX;
   DeltaY    = (UINTN)Private->ModeData[Mode].DeltaY;
-  Width     = MaxColumn * EFI_GLYPH_WIDTH;
-  Height    = (MaxRow - 1) * EFI_GLYPH_HEIGHT;
+  GlyphWidth  = EFI_GLYPH_WIDTH * Private->ModeData[Mode].GlyphScale;
+  GlyphHeight = EFI_GLYPH_HEIGHT * Private->ModeData[Mode].GlyphScale;
+  Width       = MaxColumn * GlyphWidth;
+  Height      = (MaxRow - 1) * GlyphHeight;
   Delta     = Width * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
 
   //
@@ -940,7 +954,7 @@ GraphicsConsoleConOutOutputString (
                             NULL,
                             EfiBltVideoToVideo,
                             DeltaX,
-                            DeltaY + EFI_GLYPH_HEIGHT,
+                            DeltaY + GlyphHeight,
                             DeltaX,
                             DeltaY,
                             Width,
@@ -960,7 +974,7 @@ GraphicsConsoleConOutOutputString (
                             DeltaX,
                             DeltaY + Height,
                             Width,
-                            EFI_GLYPH_HEIGHT,
+                            GlyphHeight,
                             Delta
                             );
         }
@@ -1575,6 +1589,101 @@ GetTextColors (
 }
 
 /**
+  Render a string into a bitmap and scale it into the console line buffer.
+
+  The active mode bounds the string width. Temporary bitmaps allow drawing
+  before the first text SetMode call.
+  HII receives an unscaled bitmap; GOP receives the integer-scaled pixels.
+**/
+STATIC
+EFI_STATUS
+DrawScaledString (
+  IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL  *This,
+  IN EFI_STRING                       String,
+  IN UINTN                            Count,
+  IN EFI_FONT_DISPLAY_INFO            *FontInfo,
+  IN EFI_IMAGE_OUTPUT                 *Blt
+  )
+{
+  GRAPHICS_CONSOLE_DEV           *Private;
+  GRAPHICS_CONSOLE_MODE_DATA     *ModeData;
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  *Bitmap;
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  *ScaledBitmap;
+  EFI_STATUS                    Status;
+  UINTN                         Scale;
+  UINTN                         Width;
+  UINTN                         ScaledWidth;
+  UINTN                         ScaledHeight;
+  UINTN                         Pixel;
+  UINTN                         X;
+  UINTN                         Y;
+
+  Private  = GRAPHICS_CONSOLE_CON_OUT_DEV_FROM_THIS (This);
+  ModeData = &Private->ModeData[This->Mode->Mode];
+  Scale    = ModeData->GlyphScale;
+  Width    = MIN (
+               Count * ((This->Mode->Attribute & EFI_WIDE_ATTRIBUTE) ? 2 : 1),
+               ModeData->Columns - This->Mode->CursorColumn
+               ) * EFI_GLYPH_WIDTH;
+  ScaledWidth  = Width * Scale;
+  ScaledHeight = EFI_GLYPH_HEIGHT * Scale;
+  Bitmap       = AllocatePool (Width * EFI_GLYPH_HEIGHT * sizeof (*Bitmap));
+  if (Bitmap == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  ScaledBitmap = AllocatePool (ScaledWidth * ScaledHeight * sizeof (*ScaledBitmap));
+  if (ScaledBitmap == NULL) {
+    FreePool (Bitmap);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  for (Pixel = 0; Pixel < Width * EFI_GLYPH_HEIGHT; Pixel++) {
+    Bitmap[Pixel] = FontInfo->BackgroundColor;
+  }
+
+  Blt->Width        = (UINT16)Width;
+  Blt->Height       = EFI_GLYPH_HEIGHT;
+  Blt->Image.Bitmap = Bitmap;
+  Status = mHiiFont->StringToImage (
+                       mHiiFont,
+                       EFI_HII_IGNORE_IF_NO_GLYPH | EFI_HII_IGNORE_LINE_BREAK,
+                       String,
+                       FontInfo,
+                       &Blt,
+                       0,
+                       0,
+                       NULL,
+                       NULL,
+                       NULL
+                       );
+  if (!EFI_ERROR (Status)) {
+    for (Y = 0; Y < ScaledHeight; Y++) {
+      for (X = 0; X < ScaledWidth; X++) {
+        ScaledBitmap[Y * ScaledWidth + X] = Bitmap[(Y / Scale) * Width + X / Scale];
+      }
+    }
+
+    Status = Private->GraphicsOutput->Blt (
+                                       Private->GraphicsOutput,
+                                       ScaledBitmap,
+                                       EfiBltBufferToVideo,
+                                       0,
+                                       0,
+                                       This->Mode->CursorColumn * EFI_GLYPH_WIDTH * Scale + ModeData->DeltaX,
+                                       This->Mode->CursorRow * ScaledHeight + ModeData->DeltaY,
+                                       ScaledWidth,
+                                       ScaledHeight,
+                                       0
+                                       );
+  }
+
+  FreePool (ScaledBitmap);
+  FreePool (Bitmap);
+  return Status;
+}
+
+/**
   Draw Unicode string on the Graphics Console device's screen.
 
   @param  This                  Protocol instance pointer.
@@ -1632,7 +1741,11 @@ DrawUnicodeWeightAtCursorN (
   //
   GetTextColors (This, &FontInfo->ForegroundColor, &FontInfo->BackgroundColor);
 
-  if (Private->GraphicsOutput != NULL) {
+  if ((Private->GraphicsOutput != NULL) &&
+      (Private->ModeData[This->Mode->Mode].GlyphScale > 1))
+  {
+    Status = DrawScaledString (This, String, Count, FontInfo, Blt);
+  } else if (Private->GraphicsOutput != NULL) {
     //
     // If Graphics Output protocol exists, using HII Font protocol to draw.
     //
@@ -1694,7 +1807,8 @@ FlushCursor (
   EFI_GRAPHICS_OUTPUT_PROTOCOL         *GraphicsOutput;
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION  Foreground;
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION  Background;
-  EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION  BltChar[EFI_GLYPH_HEIGHT][EFI_GLYPH_WIDTH];
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION  *BltChar;
+  UINTN Width, Height, Scale;
   UINTN                                PosX;
   UINTN                                PosY;
 
@@ -1706,6 +1820,14 @@ FlushCursor (
 
   Private        = GRAPHICS_CONSOLE_CON_OUT_DEV_FROM_THIS (This);
   GraphicsOutput = Private->GraphicsOutput;
+  Scale = Private->ModeData[CurrentMode->Mode].GlyphScale;
+  Width = EFI_GLYPH_WIDTH * Scale;
+  Height = EFI_GLYPH_HEIGHT * Scale;
+  // The text protocol can be used before SetMode allocates LineBuffer.
+  BltChar = AllocatePool (Width * Height * sizeof (*BltChar));
+  if (BltChar == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
 
   //
   // In this driver, only narrow character was supported.
@@ -1713,8 +1835,8 @@ FlushCursor (
   //
   // Blt a character to the screen
   //
-  GlyphX = (CurrentMode->CursorColumn * EFI_GLYPH_WIDTH) + Private->ModeData[CurrentMode->Mode].DeltaX;
-  GlyphY = (CurrentMode->CursorRow * EFI_GLYPH_HEIGHT) + Private->ModeData[CurrentMode->Mode].DeltaY;
+  GlyphX = (CurrentMode->CursorColumn * Width) + Private->ModeData[CurrentMode->Mode].DeltaX;
+  GlyphY = (CurrentMode->CursorRow * Height) + Private->ModeData[CurrentMode->Mode].DeltaY;
   if (GraphicsOutput != NULL) {
     GraphicsOutput->Blt (
                       GraphicsOutput,
@@ -1724,9 +1846,9 @@ FlushCursor (
                       GlyphY,
                       0,
                       0,
-                      EFI_GLYPH_WIDTH,
-                      EFI_GLYPH_HEIGHT,
-                      EFI_GLYPH_WIDTH * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
+                      Width,
+                      Height,
+                      Width * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
                       );
   }
 
@@ -1735,10 +1857,10 @@ FlushCursor (
   //
   // Convert Monochrome bitmap of the Glyph to BltBuffer structure
   //
-  for (PosY = 0; PosY < EFI_GLYPH_HEIGHT; PosY++) {
-    for (PosX = 0; PosX < EFI_GLYPH_WIDTH; PosX++) {
-      if ((mCursorGlyph.GlyphCol1[PosY] & (BIT0 << PosX)) != 0) {
-        BltChar[PosY][EFI_GLYPH_WIDTH - PosX - 1].Raw ^= Foreground.Raw;
+  for (PosY = 0; PosY < Height; PosY++) {
+    for (PosX = 0; PosX < Width; PosX++) {
+      if ((mCursorGlyph.GlyphCol1[PosY / Scale] & (BIT0 << (PosX / Scale))) != 0) {
+        BltChar[PosY * Width + Width - PosX - 1].Raw ^= Foreground.Raw;
       }
     }
   }
@@ -1752,12 +1874,13 @@ FlushCursor (
                       0,
                       GlyphX,
                       GlyphY,
-                      EFI_GLYPH_WIDTH,
-                      EFI_GLYPH_HEIGHT,
-                      EFI_GLYPH_WIDTH * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
+                      Width,
+                      Height,
+                      Width * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL)
                       );
   }
 
+  FreePool (BltChar);
   return EFI_SUCCESS;
 }
 
