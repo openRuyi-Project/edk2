@@ -197,10 +197,18 @@ ReplaceTableEntry (
   IN  BOOLEAN  IsLiveBlockMapping
   )
 {
+  BOOLEAN  TableChanged = IsTableEntry (*Entry) || IsTableEntry (Value);
+
   *Entry = Value;
 
   if (IsLiveBlockMapping && RiscVMmuEnabled ()) {
-    RiscVLocalTlbFlush (RegionStart);
+    // Non-leaf updates affect all translations covered by the old entry.
+    // All mappings are global, so both SFENCE.VMA operands must be x0.
+    if (TableChanged) {
+      RiscVLocalTlbFlushAll ();
+    } else {
+      RiscVLocalTlbFlush (RegionStart);
+    }
   }
 }
 
@@ -364,7 +372,7 @@ UpdateRegionMappingRecursive (
           Status = UpdateRegionMappingRecursive (
                      RegionStart & ~BlockMask,
                      (RegionStart | BlockMask) + 1,
-                     *Entry & PTE_ATTRIBUTES_MASK,
+                     *Entry & (PTE_ATTRIBUTES_MASK | PTE_PBMT_MASK),
                      PTE_ATTRIBUTES_MASK,
                      TranslationTable,
                      Level + 1,
