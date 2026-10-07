@@ -623,8 +623,8 @@ FrameBufferBltLibVideoToVideo (
     //
     // Copy from last line to avoid source is corrupted by copying
     //
-    Source      += Height * LineStride;
-    Destination += Height * LineStride;
+    Source      += (Height - 1) * LineStride;
+    Destination += (Height - 1) * LineStride;
     LineStride   = -LineStride;
   }
 
