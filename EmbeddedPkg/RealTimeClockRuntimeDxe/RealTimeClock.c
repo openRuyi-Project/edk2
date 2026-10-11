@@ -228,7 +228,7 @@ InitializeRealTimeClock (
       !IsValidDaylight (mTimeSettings.Daylight))
   {
     DEBUG ((
-      DEBUG_WARN,
+      (Status == EFI_NOT_FOUND) ? DEBUG_INFO : DEBUG_WARN,
       "%a: using default timezone/daylight settings\n",
       __func__
       ));
