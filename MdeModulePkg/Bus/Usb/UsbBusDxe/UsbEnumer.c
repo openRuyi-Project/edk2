@@ -439,7 +439,15 @@ UsbSelectConfig (
     //
     Status = UsbConnectDriver (UsbIf);
 
-    if (EFI_ERROR (Status)) {
+    if (Status == EFI_NOT_FOUND) {
+      DEBUG ((
+        DEBUG_INFO,
+        "UsbSelectConfig: no driver for %04x:%04x interface %u\n",
+        DevDesc->Desc.IdVendor,
+        DevDesc->Desc.IdProduct,
+        IfDesc->Settings[IfDesc->ActiveIndex]->Desc.InterfaceNumber
+        ));
+    } else if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_WARN,
         "UsbSelectConfig: failed to connect driver - %r, ignored\n",

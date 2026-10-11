@@ -1133,7 +1133,7 @@ GetWriteEnableCommand  (
     }
   }
 
-  DEBUG ((DEBUG_ERROR, "%a: Use Write Enable Command 0x%x.\n", __func__, Instance->WriteEnableLatchCommand));
+  DEBUG ((DEBUG_INFO, "%a: Use Write Enable Command 0x%x.\n", __func__, Instance->WriteEnableLatchCommand));
 }
 
 /**
@@ -1465,7 +1465,13 @@ ReadSfdpParameterHeader (
     if ((SfdpParameterHeader->IdLsb != ParameterIdLsb) ||
         (SfdpParameterHeader->IdMsb != ParameterIdMsb))
     {
-      DEBUG ((DEBUG_ERROR, "  Parameter Header: %02x:%02x is not found.\n", ParameterIdMsb, ParameterIdLsb));
+      DEBUG ((
+        ((ParameterIdMsb == SFDP_BASIC_PARAMETER_ID_MSB) &&
+         (ParameterIdLsb == SFDP_BASIC_PARAMETER_ID_LSB)) ? DEBUG_ERROR : DEBUG_INFO,
+        "  Parameter Header: %02x:%02x is not found.\n",
+        ParameterIdMsb,
+        ParameterIdLsb
+        ));
       Status =  EFI_NOT_FOUND;
     }
   }
