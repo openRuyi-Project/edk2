@@ -1409,9 +1409,18 @@ BmGetRamDiskMemoryInfo (
     (DevicePathType (RamDiskDevicePath) == MEDIA_DEVICE_PATH) &&
     (DevicePathSubType (RamDiskDevicePath) == MEDIA_RAM_DISK_DP)
     );
-  StartingAddr        = ReadUnaligned64 ((UINT64 *)((MEDIA_RAM_DISK_DEVICE_PATH *)RamDiskDevicePath)->StartingAddr);
-  EndingAddr          = ReadUnaligned64 ((UINT64 *)((MEDIA_RAM_DISK_DEVICE_PATH *)RamDiskDevicePath)->EndingAddr);
-  *RamDiskSizeInPages = EFI_SIZE_TO_PAGES ((UINTN)(EndingAddr - StartingAddr + 1));
+  StartingAddr = ReadUnaligned64 ((UINT64 *)((MEDIA_RAM_DISK_DEVICE_PATH *)RamDiskDevicePath)->StartingAddr);
+  EndingAddr   = ReadUnaligned64 ((UINT64 *)((MEDIA_RAM_DISK_DEVICE_PATH *)RamDiskDevicePath)->EndingAddr);
+  // Network RAM disks are allocated with both ends aligned for OS page maps.
+  if ((EndingAddr < StartingAddr) ||
+      (EndingAddr - StartingAddr >= MAX_UINTN - (SIZE_2MB - 1)))
+  {
+    return NULL;
+  }
+
+  *RamDiskSizeInPages = EFI_SIZE_TO_PAGES (
+                          ALIGN_VALUE ((UINTN)(EndingAddr - StartingAddr + 1), SIZE_2MB)
+                          );
   return (VOID *)(UINTN)StartingAddr;
 }
 
@@ -1436,6 +1445,9 @@ BmDestroyRamDisk (
   ASSERT (RamDiskDevicePath != NULL);
 
   RamDiskBuffer = BmGetRamDiskMemoryInfo (RamDiskDevicePath, &RamDiskSizeInPages);
+  if (RamDiskBuffer == NULL) {
+    return;
+  }
 
   //
   // Destroy RAM Disk.
@@ -1447,6 +1459,9 @@ BmDestroyRamDisk (
 
   Status = mRamDisk->Unregister (RamDiskDevicePath);
   ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
   FreeAlignedPages (RamDiskBuffer, RamDiskSizeInPages);
 }
 
@@ -1469,6 +1484,7 @@ BmExpandLoadFile (
   VOID                      *FileBuffer;
   EFI_HANDLE                RamDiskHandle;
   UINTN                     BufferSize;
+  UINTN                     BufferPages;
   EFI_DEVICE_PATH_PROTOCOL  *FullPath;
 
   Status = gBS->OpenProtocol (
@@ -1502,7 +1518,12 @@ BmExpandLoadFile (
   // wish to map this with huge page support.
   //
 
-  FileBuffer = AllocateAlignedReservedPages (EFI_SIZE_TO_PAGES (BufferSize), SIZE_2MB);
+  if ((BufferSize == 0) || (BufferSize > MAX_UINTN - (SIZE_2MB - 1))) {
+    return NULL;
+  }
+
+  BufferPages = EFI_SIZE_TO_PAGES (ALIGN_VALUE (BufferSize, SIZE_2MB));
+  FileBuffer  = AllocateAlignedReservedPages (BufferPages, SIZE_2MB);
   if (FileBuffer == NULL) {
     DEBUG_CODE_BEGIN ();
     EFI_DEVICE_PATH  *LoadFilePath;
@@ -1541,9 +1562,11 @@ BmExpandLoadFile (
     return NULL;
   }
 
+  // Keep padding deterministic when an OS maps the complete aligned region.
+  ZeroMem ((UINT8 *)FileBuffer + BufferSize, EFI_PAGES_TO_SIZE (BufferPages) - BufferSize);
   Status = LoadFile->LoadFile (LoadFile, FilePath, TRUE, &BufferSize, FileBuffer);
   if (EFI_ERROR (Status)) {
-    FreeAlignedPages (FileBuffer, EFI_SIZE_TO_PAGES (BufferSize));
+    FreeAlignedPages (FileBuffer, BufferPages);
     return NULL;
   }
 
