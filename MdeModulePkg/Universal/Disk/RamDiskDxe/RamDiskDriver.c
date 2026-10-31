@@ -57,6 +57,11 @@ RamDiskAcpiCheck (
 
   gBS->CloseEvent (Event);
 
+  BASE_LIST_FOR_EACH (Entry, &RegisteredRamDisks) {
+    PrivateData = RAM_DISK_PRIVATE_FROM_THIS (Entry);
+    RamDiskPublishFdt (PrivateData);
+  }
+
   //
   // Locate the EFI_ACPI_TABLE_PROTOCOL.
   //
@@ -94,6 +99,7 @@ RamDiskAcpiCheck (
 
   BASE_LIST_FOR_EACH (Entry, &RegisteredRamDisks) {
     PrivateData = RAM_DISK_PRIVATE_FROM_THIS (Entry);
+    RamDiskUnpublishFdt (PrivateData);
     RamDiskPublishNfit (PrivateData);
   }
 }
@@ -226,6 +232,10 @@ RamDiskDxeUnload (
   // Unregister all registered RAM disks
   //
   UnregisterAllRamDisks ();
+  Status = RamDiskFdtUnload ();
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   gBS->UninstallMultipleProtocolInterfaces (
          mRamDiskHandle,
