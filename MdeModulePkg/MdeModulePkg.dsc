@@ -23,6 +23,7 @@
 !include MdePkg/MdeLibs.dsc.inc
 
 [LibraryClasses]
+  FdtLib|MdePkg/Library/BaseFdtLib/BaseFdtLib.inf
   #
   # Entry point
   #

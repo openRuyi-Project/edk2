@@ -22,6 +22,7 @@
   RamDiskImpl.c
   RamDiskBlockIo.c
   RamDiskProtocol.c
+  RamDiskFdt.c
   RamDiskFileExplorer.c
   RamDiskImpl.h
   RamDiskHii.vfr
@@ -32,8 +33,10 @@
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
 
 [LibraryClasses]
+  FdtLib
   BaseLib
   BaseMemoryLib
   DebugLib
@@ -50,6 +53,10 @@
   DxeServicesLib
 
 [Guids]
+  gEfiAcpi20TableGuid
+  gEfiAcpiTableGuid
+  gFdtTableGuid
+  gEfiVirtualCdGuid
   gEfiIfrTianoGuid                               ## PRODUCES            ## GUID  # HII opcode
   ## PRODUCES                ## HII
   ## CONSUMES                ## HII

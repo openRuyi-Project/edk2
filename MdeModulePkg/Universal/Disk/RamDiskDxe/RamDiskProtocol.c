@@ -720,14 +720,19 @@ RamDiskRegister (
   //
   InsertTailList (&RegisteredRamDisks, &PrivateData->ThisInstance);
 
-  gBS->ConnectController (PrivateData->Handle, NULL, NULL, TRUE);
-
   FreePool (RamDiskDevNode);
 
   if ((mAcpiTableProtocol != NULL) && (mAcpiSdtProtocol != NULL)) {
     RamDiskPublishNfit (PrivateData);
   }
 
+  Status = RamDiskPublishFdt (PrivateData);
+  if (EFI_ERROR (Status)) {
+    RamDiskUnregister (PrivateData->DevicePath);
+    return Status;
+  }
+
+  gBS->ConnectController (PrivateData->Handle, NULL, NULL, TRUE);
   return EFI_SUCCESS;
 
 ErrorExit:
@@ -769,6 +774,7 @@ RamDiskUnregister (
 {
   LIST_ENTRY                  *Entry;
   LIST_ENTRY                  *NextEntry;
+  EFI_STATUS                  Status;
   BOOLEAN                     Found;
   UINT64                      StartingAddr;
   UINT64                      EndingAddr;
@@ -820,6 +826,11 @@ RamDiskUnregister (
           (EndingAddr == PrivateData->StartingAddr + PrivateData->Size - 1) &&
           (CompareGuid (&RamDiskDevNode->TypeGuid, &PrivateData->TypeGuid)))
       {
+        Status = RamDiskUnpublishFdt (PrivateData);
+        if (EFI_ERROR (Status)) {
+          return Status;
+        }
+
         //
         // Remove the content for this RAM disk in NFIT.
         //
@@ -830,16 +841,21 @@ RamDiskUnregister (
         //
         // Uninstall the EFI_DEVICE_PATH_PROTOCOL & EFI_BLOCK_IO(2)_PROTOCOL
         //
-        gBS->UninstallMultipleProtocolInterfaces (
-               PrivateData->Handle,
-               &gEfiBlockIoProtocolGuid,
-               &PrivateData->BlockIo,
-               &gEfiBlockIo2ProtocolGuid,
-               &PrivateData->BlockIo2,
-               &gEfiDevicePathProtocolGuid,
-               (EFI_DEVICE_PATH_PROTOCOL *)PrivateData->DevicePath,
-               NULL
-               );
+        Status = gBS->UninstallMultipleProtocolInterfaces (
+                        PrivateData->Handle,
+                        &gEfiBlockIoProtocolGuid,
+                        &PrivateData->BlockIo,
+                        &gEfiBlockIo2ProtocolGuid,
+                        &PrivateData->BlockIo2,
+                        &gEfiDevicePathProtocolGuid,
+                        (EFI_DEVICE_PATH_PROTOCOL *)PrivateData->DevicePath,
+                        NULL
+                        );
+
+        if (EFI_ERROR (Status)) {
+          RamDiskPublishFdt (PrivateData);
+          return Status;
+        }
 
         RemoveEntryList (&PrivateData->ThisInstance);
 

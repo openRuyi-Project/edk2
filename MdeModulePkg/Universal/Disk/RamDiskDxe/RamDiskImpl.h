@@ -87,11 +87,27 @@ typedef struct {
   UINT16                      InstanceNumber;
   RAM_DISK_CREATE_METHOD      CreateMethod;
   BOOLEAN                     InNfit;
+  BOOLEAN                     InFdt;
   EFI_QUESTION_ID             CheckBoxId;
   BOOLEAN                     CheckBoxChecked;
 
   LIST_ENTRY                  ThisInstance;
 } RAM_DISK_PRIVATE_DATA;
+
+EFI_STATUS
+RamDiskPublishFdt (
+  RAM_DISK_PRIVATE_DATA  *Disk
+  );
+
+EFI_STATUS
+RamDiskUnpublishFdt (
+  RAM_DISK_PRIVATE_DATA  *Disk
+  );
+
+EFI_STATUS
+RamDiskFdtUnload (
+  VOID
+  );
 
 #define RAM_DISK_PRIVATE_DATA_SIGNATURE  SIGNATURE_32 ('R', 'D', 'S', 'K')
 #define RAM_DISK_PRIVATE_FROM_BLKIO(a)   CR (a, RAM_DISK_PRIVATE_DATA, BlockIo, RAM_DISK_PRIVATE_DATA_SIGNATURE)
