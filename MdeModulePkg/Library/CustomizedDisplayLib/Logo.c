@@ -118,14 +118,26 @@ PrintFrontPageLogo (
     goto Out;
   }
 
-  for (UINTN Row = 0; Row < Height; Row++) {
-    for (UINTN Column = 0; Column < Width; Column++) {
-      Scaled[Row * Width + Column] = Image.Bitmap[(Row * Image.Height / Height) * Image.Width + Column * Image.Width / Width];
+  DestinationX = (ScreenX - Columns * GlyphWidth) / 2 + gScreenDimensions.RightColumn * GlyphWidth - Margin - Width;
+  DestinationY = (ScreenY - Rows * GlyphHeight) / 2 + gScreenDimensions.TopRow * GlyphHeight + Margin;
+  if ((Image.Flags & EFI_IMAGE_TRANSPARENT) != 0) {
+    Status = Gop->Blt (Gop, Scaled, EfiBltVideoToBltBuffer,
+                      DestinationX, DestinationY, 0, 0, Width, Height, 0);
+    if (EFI_ERROR (Status)) {
+      FreePool (Scaled);
+      goto Out;
     }
   }
 
-  DestinationX = (ScreenX - Columns * GlyphWidth) / 2 + gScreenDimensions.RightColumn * GlyphWidth - Margin - Width;
-  DestinationY = (ScreenY - Rows * GlyphHeight) / 2 + gScreenDimensions.TopRow * GlyphHeight + Margin;
+  for (UINTN Row = 0; Row < Height; Row++) {
+    for (UINTN Column = 0; Column < Width; Column++) {
+      EFI_GRAPHICS_OUTPUT_BLT_PIXEL Pixel = Image.Bitmap[(Row * Image.Height / Height) * Image.Width + Column * Image.Width / Width];
+      if (((Image.Flags & EFI_IMAGE_TRANSPARENT) == 0) || Pixel.Red || Pixel.Green || Pixel.Blue) {
+        Scaled[Row * Width + Column] = Pixel;
+      }
+    }
+  }
+
   Gop->Blt (Gop, Scaled, EfiBltBufferToVideo, 0, 0, DestinationX, DestinationY, Width, Height, 0);
   FreePool (Scaled);
 

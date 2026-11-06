@@ -22,6 +22,48 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/MemoryAllocationLib.h>
 #include <Library/DebugLib.h>
 
+STATIC
+EFI_STATUS
+BlendTransparentLogo (
+  EFI_GRAPHICS_OUTPUT_PROTOCOL  *Gop,
+  EFI_IMAGE_INPUT               *Image,
+  UINTN                         X,
+  UINTN                         Y
+  )
+{
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  *Background;
+  EFI_STATUS                    Status;
+  UINTN                         Pixels;
+
+  if ((Image->Flags & EFI_IMAGE_TRANSPARENT) == 0) {
+    return EFI_SUCCESS;
+  }
+
+  Pixels = (UINTN)Image->Width * Image->Height;
+  if ((Pixels == 0) || (Pixels > MAX_UINTN / sizeof (*Background))) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Background = AllocatePool (Pixels * sizeof (*Background));
+  if (Background == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Status = Gop->Blt (Gop, Background, EfiBltVideoToBltBuffer,
+                    X, Y, 0, 0, Image->Width, Image->Height, 0);
+  if (!EFI_ERROR (Status)) {
+    // HII transparent images use black as the transparent color.
+    for (UINTN Index = 0; Index < Pixels; Index++) {
+      if (!Image->Bitmap[Index].Red && !Image->Bitmap[Index].Green && !Image->Bitmap[Index].Blue) {
+        Image->Bitmap[Index] = Background[Index];
+      }
+    }
+  }
+
+  FreePool (Background);
+  return Status;
+}
+
 /**
   Show LOGO returned from Edkii Platform Logo protocol on all consoles.
 
@@ -58,6 +100,7 @@ BootLogoEnableLogo (
   UINTN                                  NewDestX;
   UINTN                                  NewDestY;
   UINTN                                  BufferSize;
+  BOOLEAN                                BltDisplayed;
 
   Status = gBS->LocateProtocol (&gEdkiiPlatformLogoProtocolGuid, NULL, (VOID **)&PlatformLogo);
   if (EFI_ERROR (Status)) {
@@ -97,6 +140,7 @@ BootLogoEnableLogo (
   SizeOfY = GraphicsOutput->Mode->Info->VerticalResolution;
 
   Blt           = NULL;
+  BltDisplayed  = FALSE;
   NumberOfLogos = 0;
   LogoDestX     = 0;
   LogoDestY     = 0;
@@ -128,6 +172,7 @@ BootLogoEnableLogo (
     }
 
     Blt = Image.Bitmap;
+    BltDisplayed = FALSE;
 
     //
     // Calculate the display position according to Attribute.
@@ -182,6 +227,11 @@ BootLogoEnableLogo (
     DestY += OffsetY;
 
     if ((DestX >= 0) && (DestY >= 0)) {
+      Status = BlendTransparentLogo (GraphicsOutput, &Image, (UINTN)DestX, (UINTN)DestY);
+      if (EFI_ERROR (Status)) {
+        continue;
+      }
+
       Status = GraphicsOutput->Blt (
                                  GraphicsOutput,
                                  Blt,
@@ -199,6 +249,7 @@ BootLogoEnableLogo (
       // Report displayed Logo information.
       //
       if (!EFI_ERROR (Status)) {
+        BltDisplayed = TRUE;
         NumberOfLogos++;
 
         if (NumberOfLogos == 1) {
@@ -239,7 +290,7 @@ BootLogoEnableLogo (
   //
   // Advertise displayed Logo information.
   //
-  if (NumberOfLogos == 1) {
+  if ((NumberOfLogos == 1) && BltDisplayed) {
     //
     // Only one logo displayed, use its Blt buffer directly for BootLogo protocol.
     //
@@ -247,7 +298,7 @@ BootLogoEnableLogo (
     Status  = EFI_SUCCESS;
   } else {
     //
-    // More than one Logo displayed, get merged BltBuffer using VideoToBuffer operation.
+    // Read the displayed area when multiple logos were drawn or the last image failed.
     //
     if (Blt != NULL) {
       FreePool (Blt);
