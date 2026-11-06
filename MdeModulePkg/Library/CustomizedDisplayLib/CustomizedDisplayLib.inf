@@ -24,6 +24,7 @@
 #
 
 [Sources]
+  Logo.c
   CustomizedDisplayLib.c
   Colors.h
   CustomizedDisplayLibInternal.h
@@ -51,8 +52,12 @@
   gEfiIfrTianoGuid  ## SOMETIMES_CONSUMES   ## UNDEFINED
 
 [Protocols]
+  gEdkiiPlatformLogoProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
 
 [Pcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFrontPageLogoEnable
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGlyphScale
   gEfiMdeModulePkgTokenSpaceGuid.PcdBrowserSubtitleTextColor               ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdBrowserFieldTextColor                  ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdBrowserFieldTextHighlightColor         ## CONSUMES

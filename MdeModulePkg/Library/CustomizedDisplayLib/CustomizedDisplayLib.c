@@ -110,6 +110,10 @@ DisplayPageFrame (
 
   UpdateStatusBar (NV_UPDATE_REQUIRED, FormData->SettingChangedFlag);
 
+  if (gClassOfVfr == FORMSET_CLASS_FRONT_PAGE) {
+    PrintFrontPageLogo (FormData);
+  }
+
   return EFI_SUCCESS;
 }
 
