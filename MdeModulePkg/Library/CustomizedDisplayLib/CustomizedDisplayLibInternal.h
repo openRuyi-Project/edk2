@@ -282,3 +282,8 @@ VOID
 ProcessExternedOpcode (
   IN FORM_DISPLAY_ENGINE_FORM  *FormData
   );
+
+VOID
+PrintFrontPageLogo (
+  IN FORM_DISPLAY_ENGINE_FORM  *FormData
+  );
