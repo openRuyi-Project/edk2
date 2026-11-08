@@ -25,7 +25,8 @@ BootAndroidBootImg (
 
 EFI_STATUS
 ParseAndroidBootImg (
-  IN  VOID   *BootImg,
+  IN UINTN   BufferSize,
+  IN VOID    *BootImg,
   OUT VOID   **Kernel,
   OUT UINTN  *KernelSize,
   OUT VOID   **Ramdisk,
