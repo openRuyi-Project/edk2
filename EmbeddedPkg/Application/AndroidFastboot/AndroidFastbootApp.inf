@@ -25,6 +25,9 @@
 [Sources.AARCH64]
   Arm/BootAndroidBootImg.c
 
+[Sources.RISCV64]
+  RiscV64/BootEfi.c
+
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
