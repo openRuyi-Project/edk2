@@ -12,10 +12,10 @@
 // return EFI_INVALID_PARAMETER if the boot.img is invalid (i.e. doesn't have the
 //  right magic value),
 // return EFI_NOT_FOUND if there was no kernel in the boot.img.
-// Note that the Ramdisk is optional - *Ramdisk won't be touched if it isn't
-// present, but RamdiskSize will be set to 0.
+// The ramdisk is optional. Return NULL and size zero when it is absent.
 EFI_STATUS
 ParseAndroidBootImg (
+  IN  UINTN  BufferSize,
   IN  VOID   *BootImg,
   OUT VOID   **Kernel,
   OUT UINTN  *KernelSize,
@@ -26,9 +26,14 @@ ParseAndroidBootImg (
 {
   ANDROID_BOOTIMG_HEADER  *Header;
   UINT8                   *BootImgBytePtr;
+  UINT64                  RamdiskOffset;
 
   // Cast to UINT8 so we can do pointer arithmetic
   BootImgBytePtr = (UINT8 *)BootImg;
+
+  if (BufferSize < sizeof (*Header)) {
+    return EFI_INVALID_PARAMETER;
+  }
 
   Header = (ANDROID_BOOTIMG_HEADER *)BootImg;
 
@@ -45,23 +50,38 @@ ParseAndroidBootImg (
     return EFI_NOT_FOUND;
   }
 
-  ASSERT (IS_VALID_ANDROID_PAGE_SIZE (Header->PageSize));
+  if (!IS_VALID_ANDROID_PAGE_SIZE (Header->PageSize) ||
+      (Header->PageSize > BufferSize) ||
+      (Header->KernelSize > BufferSize - Header->PageSize))
+  {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  // Check the padded kernel range before locating an optional ramdisk.
+  RamdiskOffset = (UINT64)Header->PageSize +
+                  ALIGN_VALUE ((UINT64)Header->KernelSize, Header->PageSize);
+
+  if ((Header->RamdiskSize != 0) &&
+      ((RamdiskOffset > BufferSize) || (Header->RamdiskSize > BufferSize - RamdiskOffset)))
+  {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  *Ramdisk = NULL;
 
   *KernelSize  = Header->KernelSize;
   *Kernel      = BootImgBytePtr + Header->PageSize;
   *RamdiskSize = Header->RamdiskSize;
 
   if (Header->RamdiskSize != 0) {
-    *Ramdisk = (VOID *)(BootImgBytePtr
-                        + Header->PageSize
-                        + ALIGN_VALUE (Header->KernelSize, Header->PageSize));
+    *Ramdisk = BootImgBytePtr + (UINTN)RamdiskOffset;
   }
 
   AsciiStrnCpyS (
     KernelArgs,
     ANDROID_BOOTIMG_KERNEL_ARGS_SIZE,
     Header->KernelArgs,
-    ANDROID_BOOTIMG_KERNEL_ARGS_SIZE
+    ANDROID_BOOTIMG_KERNEL_ARGS_SIZE - 1
     );
 
   return EFI_SUCCESS;

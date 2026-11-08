@@ -132,6 +132,7 @@ BootAndroidBootImg (
   CHAR16              *LoadOptions, *NewLoadOptions;
 
   Status = ParseAndroidBootImg (
+             BufferSize,
              Buffer,
              &Kernel,
              &KernelSize,
