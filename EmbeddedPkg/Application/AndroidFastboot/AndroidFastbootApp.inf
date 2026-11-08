@@ -43,6 +43,7 @@
 [Protocols]
   gAndroidFastbootTransportProtocolGuid
   gAndroidFastbootPlatformProtocolGuid
+  gAndroidFastbootPlatformExtensionProtocolGuid
   gGblEfiFastbootTransportProtocolGuid
   gEfiLoadedImageProtocolGuid
   gEfiSimpleTextOutProtocolGuid

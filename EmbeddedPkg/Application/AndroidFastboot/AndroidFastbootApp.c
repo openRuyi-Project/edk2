@@ -7,6 +7,7 @@
 #include "AndroidFastbootApp.h"
 #include "FastbootTransport.h"
 #include <Protocol/AndroidFastbootPlatform.h>
+#include <Protocol/AndroidFastbootPlatformExtension.h>
 #include <Library/PcdLib.h>
 #include <Library/PrintLib.h>
 #include <Library/TimerLib.h>
@@ -23,15 +24,16 @@ typedef enum {
   ExpectDataState
 } ANDROID_FASTBOOT_STATE;
 
-STATIC FASTBOOT_PLATFORM_PROTOCOL  *mPlatform;
-STATIC ANDROID_FASTBOOT_STATE      mState;
-STATIC UINT8                       *mDataBuffer;
-STATIC UINTN                       mNumDataBytes;
-STATIC UINTN                       mBytesReceivedSoFar;
-STATIC BOOLEAN                     mDownloadComplete;
-STATIC BOOLEAN                     mFinished;
-STATIC BOOLEAN                     mReboot;
-STATIC UINT64                      mLastData;
+STATIC FASTBOOT_PLATFORM_PROTOCOL            *mPlatform;
+STATIC FASTBOOT_PLATFORM_EXTENSION_PROTOCOL  *mExtension;
+STATIC ANDROID_FASTBOOT_STATE                mState;
+STATIC UINT8                                 *mDataBuffer;
+STATIC UINTN                                 mNumDataBytes;
+STATIC UINTN                                 mBytesReceivedSoFar;
+STATIC BOOLEAN                               mDownloadComplete;
+STATIC BOOLEAN                               mFinished;
+STATIC BOOLEAN                               mReboot;
+STATIC UINT64                                mLastData;
 
 STATIC EFI_STATUS
 SendResponse (
@@ -95,6 +97,21 @@ HexNumber (
   return TRUE;
 }
 
+STATIC BOOLEAN
+HexRange (
+  IN CONST CHAR8  *Text,
+  IN UINTN        Digits,
+  OUT UINT64      *Value
+  )
+{
+  if ((Digits >= 2) && (Text[0] == '0') && ((Text[1] == 'x') || (Text[1] == 'X'))) {
+    Text   += 2;
+    Digits -= 2;
+  }
+
+  return HexNumber (Text, Digits, Value);
+}
+
 STATIC EFI_STATUS
 GetVar (
   IN CHAR8   *Name,
@@ -109,7 +126,9 @@ GetVar (
     return AsciiStrCpyS (Value, 61, "no");
   }
 
-  if (AsciiStrCmp (Name, "max-download-size") == 0) {
+  if ((AsciiStrCmp (Name, "max-download-size") == 0) ||
+      ((mExtension != NULL) && (mExtension->ReadPartition != NULL) && (AsciiStrCmp (Name, "max-fetch-size") == 0)))
+  {
     AsciiSPrint (Value, 61, "0x%08x", FixedPcdGet32 (PcdAndroidFastbootMaxDownloadSize));
     return EFI_SUCCESS;
   }
@@ -137,21 +156,32 @@ HandleGetVar (
   )
 {
   STATIC CHAR8  *Variables[] = {
-    "version",            "is-userspace", "max-download-size",
-    "version-bootloader", "product",      "serialno", "secure"
+    "version",            "is-userspace", "max-download-size", "max-fetch-size",
+    "version-bootloader", "product",      "serialno",          "secure"
   };
   CHAR8         Value[61];
   EFI_STATUS    Status;
   UINTN         Index;
+  UINTN         Count;
+  BOOLEAN       EnumeratePlatform;
 
   if (AsciiStrCmp (Name, "all") == 0) {
-    for (Index = 0; Index < ARRAY_SIZE (Variables); Index++) {
+    EnumeratePlatform = (mExtension != NULL) && (mExtension->GetVarAll != NULL);
+    Count             = EnumeratePlatform ? 4 : ARRAY_SIZE (Variables);
+    for (Index = 0; Index < Count; Index++) {
       Status = GetVar (Variables[Index], Value);
       if (!EFI_ERROR (Status) && (Value[0] != 0)) {
         Status = ReportVariable (NULL, Variables[Index], Value);
         if (EFI_ERROR (Status)) {
           return Status;
         }
+      }
+    }
+
+    if (EnumeratePlatform) {
+      Status = mExtension->GetVarAll (mExtension, ReportVariable, NULL);
+      if (EFI_ERROR (Status)) {
+        return Status;
       }
     }
 
@@ -229,6 +259,78 @@ HandleFlash (
   Status = mPlatform->FlashPartition (PartitionName, mNumDataBytes, mDataBuffer);
   ResetDownload ();
   return OperationResult (Status);
+}
+
+STATIC EFI_STATUS
+HandleFetch (
+  IN CHAR8  *PartitionName
+  )
+{
+  CHAR8       *OffsetText;
+  CHAR8       *LengthText;
+  CHAR8       Name[FASTBOOT_COMMAND_MAX_LENGTH + 16];
+  CHAR8       Value[61];
+  UINT64      Capacity;
+  UINT64      Offset;
+  UINT64      Length;
+  UINTN       Sent;
+  UINTN       Bytes;
+  EFI_STATUS  Status;
+
+  ResetDownload ();
+  if ((mExtension == NULL) || (mExtension->ReadPartition == NULL)) {
+    return SendResponse ("FAIL", "readback is not supported");
+  }
+
+  Offset     = 0;
+  OffsetText = AsciiStrStr (PartitionName, ":");
+  if (OffsetText != NULL) {
+    *OffsetText++ = 0;
+  }
+
+  AsciiSPrint (Name, sizeof (Name), "partition-size:%a", PartitionName);
+  Status = GetVar (Name, Value);
+  if (EFI_ERROR (Status) || !HexRange (Value, AsciiStrLen (Value), &Capacity)) {
+    return SendResponse ("FAIL", "unknown partition");
+  }
+
+  Length = Capacity;
+  if (OffsetText != NULL) {
+    LengthText = AsciiStrStr (OffsetText, ":");
+    if ((LengthText == NULL) || !HexRange (OffsetText, LengthText - OffsetText, &Offset) ||
+        !HexRange (LengthText + 1, AsciiStrLen (LengthText + 1), &Length))
+    {
+      return SendResponse ("FAIL", "invalid read range");
+    }
+  }
+
+  if ((Length == 0) || (Length > FixedPcdGet32 (PcdAndroidFastbootMaxDownloadSize)) ||
+      (Offset > Capacity) || (Length > Capacity - Offset))
+  {
+    return SendResponse ("FAIL", "read range exceeds partition or buffer");
+  }
+
+  mDataBuffer = AllocatePool ((UINTN)Length);
+  if (mDataBuffer == NULL) {
+    return SendResponse ("FAIL", "not enough memory");
+  }
+
+  Status = mExtension->ReadPartition (mExtension, PartitionName, Offset, (UINTN)Length, mDataBuffer);
+  if (EFI_ERROR (Status)) {
+    ResetDownload ();
+    return OperationResult (Status);
+  }
+
+  // The provider has finished reporting INFO before the binary data phase.
+  AsciiSPrint (Value, sizeof (Value), "%08x", (UINT32)Length);
+  Status = SendResponse ("DATA", Value);
+  for (Sent = 0; !EFI_ERROR (Status) && (Sent < Length); Sent += Bytes) {
+    Bytes  = MIN (FASTBOOT_PACKET_BYTES, (UINTN)Length - Sent);
+    Status = FastbootTransportSend (Bytes, mDataBuffer + Sent);
+  }
+
+  ResetDownload ();
+  return EFI_ERROR (Status) ? Status : SendResponse ("OKAY", "");
 }
 
 STATIC EFI_STATUS
@@ -325,6 +427,10 @@ AcceptCmd (
     return HandleFlash (Command + 6);
   }
 
+  if (AsciiStrnCmp (Command, "fetch:", 6) == 0) {
+    return HandleFetch (Command + 6);
+  }
+
   if (AsciiStrnCmp (Command, "erase:", 6) == 0) {
     return OperationResult (mPlatform->ErasePartition (Command + 6));
   }
@@ -403,12 +509,18 @@ FastbootAppEntryPoint (
 
   mDataBuffer = NULL;
   ResetDownload ();
-  mFinished = FALSE;
-  mReboot   = FALSE;
-  Started   = FALSE;
-  Status    = gBS->LocateProtocol (&gAndroidFastbootPlatformProtocolGuid, NULL, (VOID **)&mPlatform);
+  mFinished  = FALSE;
+  mReboot    = FALSE;
+  mExtension = NULL;
+  Started    = FALSE;
+  Status     = gBS->LocateProtocol (&gAndroidFastbootPlatformProtocolGuid, NULL, (VOID **)&mPlatform);
   if (EFI_ERROR (Status)) {
     return Status;
+  }
+
+  gBS->LocateProtocol (&gAndroidFastbootPlatformExtensionProtocolGuid, NULL, (VOID **)&mExtension);
+  if ((mExtension != NULL) && (mExtension->Revision < FASTBOOT_PLATFORM_EXTENSION_REVISION)) {
+    return EFI_UNSUPPORTED;
   }
 
   Status = mPlatform->Init ();
