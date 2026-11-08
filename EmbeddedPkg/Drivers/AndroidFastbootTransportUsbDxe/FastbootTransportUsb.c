@@ -129,8 +129,16 @@ DataReceived (
 {
   FASTBOOT_USB_PACKET_LIST  *NewEntry;
 
+  if (mReceiveEvent == NULL) {
+    FreePool (Buffer);
+    return;
+  }
+
   NewEntry = AllocatePool (sizeof (*NewEntry));
-  ASSERT (NewEntry != NULL);
+  if (NewEntry == NULL) {
+    FreePool (Buffer);
+    return;
+  }
 
   NewEntry->Buffer     = Buffer;
   NewEntry->BufferSize = Size;
@@ -183,7 +191,21 @@ FastbootTransportUsbStop (
   VOID
   )
 {
-  // not yet implemented in USB
+  EFI_TPL                   OldTpl;
+  FASTBOOT_USB_PACKET_LIST  *Entry;
+
+  // The legacy device protocol has no Stop operation. Detach the application
+  // event first so later device callbacks cannot signal a closed handle.
+  OldTpl        = gBS->RaiseTPL (TPL_CALLBACK);
+  mReceiveEvent = NULL;
+  while (!IsListEmpty (&mPacketList)) {
+    Entry = BASE_CR (GetFirstNode (&mPacketList), FASTBOOT_USB_PACKET_LIST, Link);
+    RemoveEntryList (&Entry->Link);
+    FreePool (Entry->Buffer);
+    FreePool (Entry);
+  }
+
+  gBS->RestoreTPL (OldTpl);
   return EFI_SUCCESS;
 }
 
