@@ -240,7 +240,11 @@
 
 [Components.AARCH64]
   EmbeddedPkg/Application/AndroidBoot/AndroidBootApp.inf
-  EmbeddedPkg/Application/AndroidFastboot/AndroidFastbootApp.inf
+  EmbeddedPkg/Application/AndroidFastboot/AndroidFastbootApp.inf {
+    <LibraryClasses>
+      TimerLib|ArmPkg/Library/ArmArchTimerLib/ArmArchTimerLib.inf
+      ArmGenericTimerCounterLib|ArmPkg/Library/ArmGenericTimerVirtCounterLib/ArmGenericTimerVirtCounterLib.inf
+  }
   EmbeddedPkg/Drivers/AndroidFastbootTransportUsbDxe/FastbootTransportUsbDxe.inf
   EmbeddedPkg/Drivers/AndroidFastbootTransportTcpDxe/FastbootTransportTcpDxe.inf
 

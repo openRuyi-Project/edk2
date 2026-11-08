@@ -18,6 +18,8 @@
 [Sources.common]
   AndroidFastbootApp.c
   AndroidBootImg.c
+  FastbootTransport.c
+  FastbootTransport.h
 
 [Sources.AARCH64]
   Arm/BootAndroidBootImg.c
@@ -31,6 +33,7 @@
   MemoryAllocationLib
   PcdLib
   PrintLib
+  TimerLib
   UefiApplicationEntryPoint
   UefiBootServicesTableLib
   UefiLib
@@ -38,6 +41,7 @@
 
 [Protocols]
   gAndroidFastbootTransportProtocolGuid
+  gGblEfiFastbootTransportProtocolGuid
   gAndroidFastbootPlatformProtocolGuid
   gEfiLoadedImageProtocolGuid
   gEfiSimpleTextOutProtocolGuid
