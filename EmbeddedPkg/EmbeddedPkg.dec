@@ -198,3 +198,6 @@
   # EFI Memory Attribute Protocol default enable state
   #
   gEmbeddedTokenSpaceGuid.PcdMemoryAttributeEnabledDefault|TRUE|BOOLEAN|0x00000060
+
+[PcdsFixedAtBuild]
+  gEmbeddedTokenSpaceGuid.PcdAndroidFastbootMaxDownloadSize|0x08000000|UINT32|0x00001001
