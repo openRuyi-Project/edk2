@@ -49,17 +49,19 @@ STATIC EFI_EVENT  mReceiveEvent;
 STATIC EFI_SERVICE_BINDING_PROTOCOL  *mTcpServiceBinding;
 STATIC EFI_HANDLE                    mTcpHandle = NULL;
 
-// We only ever use one IO token for receive and one for transmit. To save
-// repeatedly allocating and freeing, just allocate statically and re-use.
+// Reuse receive tokens. Each queued transmit owns its token and buffer.
 #define NUM_RX_TOKENS  16
 #define TOKEN_NEXT(Index)  (((Index) + 1) % NUM_RX_TOKENS)
 
-STATIC UINTN                   mNextSubmitIndex;
-STATIC UINTN                   mNextReceiveIndex;
-STATIC EFI_TCP4_IO_TOKEN       mReceiveToken[NUM_RX_TOKENS];
-STATIC EFI_TCP4_RECEIVE_DATA   mRxData[NUM_RX_TOKENS];
-STATIC EFI_TCP4_IO_TOKEN       mTransmitToken;
-STATIC EFI_TCP4_TRANSMIT_DATA  mTxData;
+STATIC UINTN                  mNextSubmitIndex;
+STATIC UINTN                  mNextReceiveIndex;
+STATIC EFI_TCP4_IO_TOKEN      mReceiveToken[NUM_RX_TOKENS];
+STATIC EFI_TCP4_RECEIVE_DATA  mRxData[NUM_RX_TOKENS];
+typedef struct {
+  EFI_TCP4_IO_TOKEN         Token;
+  EFI_TCP4_TRANSMIT_DATA    Data;
+  EFI_EVENT                 FatalErrorEvent;
+} FASTBOOT_TCP_TRANSMIT;
 // We also reuse the accept token
 STATIC EFI_TCP4_LISTEN_TOKEN  mAcceptToken;
 // .. and the close token
@@ -391,11 +393,6 @@ TcpFastbootTransportStart (
     mReceiveToken[Index].Packet.RxData = &mRxData[Index];
   }
 
-  mTxData.Push                 = TRUE;
-  mTxData.Urgent               = FALSE;
-  mTxData.FragmentCount        = 1;
-  mTransmitToken.Packet.TxData = &mTxData;
-
   Status = gBS->CreateEvent (
                   EVT_NOTIFY_SIGNAL,
                   TPL_CALLBACK,
@@ -538,71 +535,90 @@ TcpFastbootTransportStop (
 /*
   Event notify function for when data has been sent. Free resources and report
   errors.
-  Context should point to the transmit IO token passed to
-  TcpConnection->Transmit.
+  Context owns the token and buffer for this transmission.
 */
 STATIC
 VOID
+EFIAPI
 DataSent (
-  EFI_EVENT  Event,
-  VOID       *Context
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
   )
 {
-  EFI_STATUS  Status;
+  FASTBOOT_TCP_TRANSMIT  *Transfer = Context;
 
-  Status = mTransmitToken.CompletionToken.Status;
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "TCP Fastboot transmit result: %r\n", Status));
-    gBS->SignalEvent (*(EFI_EVENT *)Context);
+  if (EFI_ERROR (Transfer->Token.CompletionToken.Status)) {
+    DEBUG ((DEBUG_ERROR, "TCP Fastboot transmit result: %r\n", Transfer->Token.CompletionToken.Status));
+    gBS->SignalEvent (Transfer->FatalErrorEvent);
   }
 
-  FreePool (mTransmitToken.Packet.TxData->FragmentTable[0].FragmentBuffer);
+  FreePool (Transfer->Data.FragmentTable[0].FragmentBuffer);
+  gBS->CloseEvent (Event);
+  FreePool (Transfer);
 }
 
 EFI_STATUS
 EFIAPI
 TcpFastbootTransportSend (
-  IN        UINTN      BufferSize,
-  IN  CONST VOID       *Buffer,
-  IN        EFI_EVENT  *FatalErrorEvent
+  IN UINTN       BufferSize,
+  IN CONST VOID  *Buffer,
+  IN EFI_EVENT   *FatalErrorEvent
   )
 {
-  EFI_STATUS  Status;
+  EFI_STATUS             Status;
+  EFI_TPL                OldTpl;
+  FASTBOOT_TCP_TRANSMIT  *Transfer;
 
   if (BufferSize > 512) {
     return EFI_INVALID_PARAMETER;
   }
 
-  //
-  // Build transmit IO token
-  //
+  OldTpl = gBS->RaiseTPL (TPL_CALLBACK);
+  if (mTcpConnection == NULL) {
+    gBS->RestoreTPL (OldTpl);
+    return EFI_DEVICE_ERROR;
+  }
 
-  // Create an event so we are notified when a transmission is complete.
-  // We use this to free resources and report errors.
+  Transfer = AllocateZeroPool (sizeof (*Transfer));
+  if (Transfer == NULL) {
+    gBS->RestoreTPL (OldTpl);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Transfer->FatalErrorEvent                      = *FatalErrorEvent;
+  Transfer->Data.Push                            = TRUE;
+  Transfer->Data.FragmentCount                   = 1;
+  Transfer->Data.DataLength                      = (UINT32)BufferSize;
+  Transfer->Data.FragmentTable[0].FragmentLength = (UINT32)BufferSize;
+  Transfer->Data.FragmentTable[0].FragmentBuffer = AllocateCopyPool (BufferSize, Buffer);
+  Transfer->Token.Packet.TxData                  = &Transfer->Data;
+  if (Transfer->Data.FragmentTable[0].FragmentBuffer == NULL) {
+    FreePool (Transfer);
+    gBS->RestoreTPL (OldTpl);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   Status = gBS->CreateEvent (
                   EVT_NOTIFY_SIGNAL,
                   TPL_CALLBACK,
                   DataSent,
-                  FatalErrorEvent,
-                  &mTransmitToken.CompletionToken.Event
+                  Transfer,
+                  &Transfer->Token.CompletionToken.Event
                   );
-  ASSERT_EFI_ERROR (Status);
-
-  mTxData.DataLength = BufferSize;
-
-  mTxData.FragmentTable[0].FragmentLength = BufferSize;
-  mTxData.FragmentTable[0].FragmentBuffer = AllocateCopyPool (
-                                              BufferSize,
-                                              Buffer
-                                              );
-
-  Status = mTcpConnection->Transmit (mTcpConnection, &mTransmitToken);
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "TCP Transmit: %r\n", Status));
-    return Status;
+  if (!EFI_ERROR (Status)) {
+    Status = mTcpConnection->Transmit (mTcpConnection, &Transfer->Token);
+    if (EFI_ERROR (Status)) {
+      gBS->CloseEvent (Transfer->Token.CompletionToken.Event);
+    }
   }
 
-  return EFI_SUCCESS;
+  if (EFI_ERROR (Status)) {
+    FreePool (Transfer->Data.FragmentTable[0].FragmentBuffer);
+    FreePool (Transfer);
+  }
+
+  gBS->RestoreTPL (OldTpl);
+  return Status;
 }
 
 EFI_STATUS
