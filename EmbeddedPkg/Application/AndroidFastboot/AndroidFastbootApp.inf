@@ -18,6 +18,7 @@
 [Sources.common]
   AndroidFastbootApp.c
   AndroidBootImg.c
+  BootEfi.c
   FastbootTransport.c
   FastbootTransport.h
 
@@ -41,8 +42,8 @@
 
 [Protocols]
   gAndroidFastbootTransportProtocolGuid
-  gGblEfiFastbootTransportProtocolGuid
   gAndroidFastbootPlatformProtocolGuid
+  gGblEfiFastbootTransportProtocolGuid
   gEfiLoadedImageProtocolGuid
   gEfiSimpleTextOutProtocolGuid
   gEfiSimpleTextInProtocolGuid
@@ -55,3 +56,6 @@
 [Packages.AARCH64]
   ArmPkg/ArmPkg.dec
   ArmPlatformPkg/ArmPlatformPkg.dec
+
+[FixedPcd]
+  gEmbeddedTokenSpaceGuid.PcdAndroidFastbootMaxDownloadSize
