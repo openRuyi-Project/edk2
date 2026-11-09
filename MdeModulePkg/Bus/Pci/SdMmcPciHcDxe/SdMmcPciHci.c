@@ -1478,6 +1478,8 @@ BuildAdmaDescTable (
   UINT64                Entries;
   UINT64                Index;
   UINT64                Remaining;
+  UINT64                Chunk;
+  UINT64                Boundary;
   UINT64                Address;
   UINTN                 TableSize;
   EFI_PCI_IO_PROTOCOL   *PciIo;
@@ -1491,8 +1493,12 @@ BuildAdmaDescTable (
   DescSize           = sizeof (SD_MMC_HC_ADMA_32_DESC_LINE);
   AdmaDesc           = NULL;
 
-  Data    = Trb->DataPhy;
-  DataLen = Trb->DataLen;
+  Data     = Trb->DataPhy;
+  DataLen  = Trb->DataLen;
+  Boundary = Trb->Private->Slot[Trb->Slot].DmaBoundary;
+  if ((DataLen == 0) || (Data > MAX_UINT64 - DataLen)) {
+    return EFI_INVALID_PARAMETER;
+  }
   PciIo   = Trb->Private->PciIo;
 
   //
@@ -1539,7 +1545,27 @@ BuildAdmaDescTable (
     AdmaMaxDataPerLine = ADMA_MAX_DATA_PER_LINE_26B;
   }
 
-  Entries        = DivU64x32 ((DataLen + AdmaMaxDataPerLine - 1), AdmaMaxDataPerLine);
+  Entries   = 0;
+  Address   = Data;
+  Remaining = DataLen;
+  while (Remaining != 0) {
+    Chunk = MIN (Remaining, AdmaMaxDataPerLine);
+    if (Boundary != 0) {
+      Chunk = MIN (Chunk, Boundary - (Address & (Boundary - 1)));
+    }
+
+    Entries++;
+    Address   += Chunk;
+    Remaining -= Chunk;
+  }
+  //
+  // Check both the UINTN conversion and page rounding before allocation.
+  // A small platform boundary can require a large descriptor table.
+  //
+  if (Entries > DivU64x32 (MAX_UINTN - EFI_PAGE_MASK, DescSize)) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   TableSize      = (UINTN)MultU64x32 (Entries, DescSize);
   Trb->AdmaPages = (UINT32)EFI_SIZE_TO_PAGES (TableSize);
   Status         = PciIo->AllocateBuffer (
@@ -1608,78 +1634,44 @@ BuildAdmaDescTable (
   }
 
   for (Index = 0; Index < Entries; Index++) {
+    Chunk = MIN (Remaining, AdmaMaxDataPerLine);
+    if (Boundary != 0) {
+      Chunk = MIN (Chunk, Boundary - (Address & (Boundary - 1)));
+    }
+
     if (Trb->Mode == SdMmcAdma32bMode) {
-      if (Remaining <= AdmaMaxDataPerLine) {
-        Trb->Adma32Desc[Index].Valid = 1;
-        Trb->Adma32Desc[Index].Act   = 2;
-        if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
-          Trb->Adma32Desc[Index].UpperLength = (UINT16)RShiftU64 (Remaining, 16);
-        }
-
-        Trb->Adma32Desc[Index].LowerLength = (UINT16)(Remaining & MAX_UINT16);
-        Trb->Adma32Desc[Index].Address     = (UINT32)Address;
-        break;
-      } else {
-        Trb->Adma32Desc[Index].Valid = 1;
-        Trb->Adma32Desc[Index].Act   = 2;
-        if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
-          Trb->Adma32Desc[Index].UpperLength = 0;
-        }
-
-        Trb->Adma32Desc[Index].LowerLength = 0;
-        Trb->Adma32Desc[Index].Address     = (UINT32)Address;
+      Trb->Adma32Desc[Index].Valid = 1;
+      Trb->Adma32Desc[Index].Act = 2;
+      Trb->Adma32Desc[Index].LowerLength = (UINT16)Chunk;
+      Trb->Adma32Desc[Index].Address = (UINT32)Address;
+      if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
+        Trb->Adma32Desc[Index].UpperLength = (UINT16)RShiftU64 (Chunk, 16);
       }
     } else if (Trb->Mode == SdMmcAdma64bV3Mode) {
-      if (Remaining <= AdmaMaxDataPerLine) {
-        Trb->Adma64V3Desc[Index].Valid = 1;
-        Trb->Adma64V3Desc[Index].Act   = 2;
-        if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
-          Trb->Adma64V3Desc[Index].UpperLength = (UINT16)RShiftU64 (Remaining, 16);
-        }
-
-        Trb->Adma64V3Desc[Index].LowerLength  = (UINT16)(Remaining & MAX_UINT16);
-        Trb->Adma64V3Desc[Index].LowerAddress = (UINT32)Address;
-        Trb->Adma64V3Desc[Index].UpperAddress = (UINT32)RShiftU64 (Address, 32);
-        break;
-      } else {
-        Trb->Adma64V3Desc[Index].Valid = 1;
-        Trb->Adma64V3Desc[Index].Act   = 2;
-        if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
-          Trb->Adma64V3Desc[Index].UpperLength = 0;
-        }
-
-        Trb->Adma64V3Desc[Index].LowerLength  = 0;
-        Trb->Adma64V3Desc[Index].LowerAddress = (UINT32)Address;
-        Trb->Adma64V3Desc[Index].UpperAddress = (UINT32)RShiftU64 (Address, 32);
+      Trb->Adma64V3Desc[Index].Valid = 1;
+      Trb->Adma64V3Desc[Index].Act = 2;
+      Trb->Adma64V3Desc[Index].LowerLength = (UINT16)Chunk;
+      Trb->Adma64V3Desc[Index].LowerAddress = (UINT32)Address;
+      Trb->Adma64V3Desc[Index].UpperAddress = (UINT32)RShiftU64 (Address, 32);
+      if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
+        Trb->Adma64V3Desc[Index].UpperLength = (UINT16)RShiftU64 (Chunk, 16);
       }
     } else {
-      if (Remaining <= AdmaMaxDataPerLine) {
-        Trb->Adma64V4Desc[Index].Valid = 1;
-        Trb->Adma64V4Desc[Index].Act   = 2;
-        if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
-          Trb->Adma64V4Desc[Index].UpperLength = (UINT16)RShiftU64 (Remaining, 16);
-        }
-
-        Trb->Adma64V4Desc[Index].LowerLength  = (UINT16)(Remaining & MAX_UINT16);
-        Trb->Adma64V4Desc[Index].LowerAddress = (UINT32)Address;
-        Trb->Adma64V4Desc[Index].UpperAddress = (UINT32)RShiftU64 (Address, 32);
-        break;
-      } else {
-        Trb->Adma64V4Desc[Index].Valid = 1;
-        Trb->Adma64V4Desc[Index].Act   = 2;
-        if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
-          Trb->Adma64V4Desc[Index].UpperLength = 0;
-        }
-
-        Trb->Adma64V4Desc[Index].LowerLength  = 0;
-        Trb->Adma64V4Desc[Index].LowerAddress = (UINT32)Address;
-        Trb->Adma64V4Desc[Index].UpperAddress = (UINT32)RShiftU64 (Address, 32);
+      Trb->Adma64V4Desc[Index].Valid = 1;
+      Trb->Adma64V4Desc[Index].Act = 2;
+      Trb->Adma64V4Desc[Index].LowerLength = (UINT16)Chunk;
+      Trb->Adma64V4Desc[Index].LowerAddress = (UINT32)Address;
+      Trb->Adma64V4Desc[Index].UpperAddress = (UINT32)RShiftU64 (Address, 32);
+      if (Trb->AdmaLengthMode == SdMmcAdmaLen26b) {
+        Trb->Adma64V4Desc[Index].UpperLength = (UINT16)RShiftU64 (Chunk, 16);
       }
     }
 
-    Remaining -= AdmaMaxDataPerLine;
-    Address   += AdmaMaxDataPerLine;
+    Remaining -= Chunk;
+    Address   += Chunk;
   }
+
+  Index = Entries - 1;
 
   //
   // Set the last descriptor line as end of descriptor table
