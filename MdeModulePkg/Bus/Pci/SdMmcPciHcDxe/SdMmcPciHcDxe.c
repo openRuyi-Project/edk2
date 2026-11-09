@@ -648,7 +648,7 @@ SdMmcPciHcDriverBindingStart (
 
   Support64BitDma = TRUE;
   for (Slot = FirstBar; Slot < (FirstBar + SlotNum); Slot++) {
-    Private->Slot[Slot].Enable = TRUE;
+    Private->Slot[Slot].Enable = FALSE;
     //
     // Get SD/MMC Pci Host Controller Version
     //
@@ -729,6 +729,29 @@ SdMmcPciHcDriverBindingStart (
       continue;
     }
 
+    Private->Slot[Slot].Enable = TRUE;
+  }
+
+  //
+  // Enable 64-bit DMA support in the PCI layer if this controller
+  // supports it.
+  //
+  if (Support64BitDma) {
+    Status = PciIo->Attributes (
+                      PciIo,
+                      EfiPciIoAttributeOperationEnable,
+                      EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE,
+                      NULL
+                      );
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_WARN, "SdMmcPciHcDriverBindingStart: failed to enable 64-bit DMA (%r)\n", Status));
+    }
+  }
+
+  for (Slot = FirstBar; Slot < (FirstBar + SlotNum); Slot++) {
+    if (!Private->Slot[Slot].Enable) {
+      continue;
+    }
     //
     // Reset the specified slot of the SD/MMC Pci Host Controller
     //
@@ -777,22 +800,6 @@ SdMmcPciHcDriverBindingStart (
     //
     if (Index == RoutineNum) {
       Private->Slot[Slot].Initialized = FALSE;
-    }
-  }
-
-  //
-  // Enable 64-bit DMA support in the PCI layer if this controller
-  // supports it.
-  //
-  if (Support64BitDma) {
-    Status = PciIo->Attributes (
-                      PciIo,
-                      EfiPciIoAttributeOperationEnable,
-                      EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE,
-                      NULL
-                      );
-    if (EFI_ERROR (Status)) {
-      DEBUG ((DEBUG_WARN, "SdMmcPciHcDriverBindingStart: failed to enable 64-bit DMA (%r)\n", Status));
     }
   }
 
