@@ -682,9 +682,30 @@ SdCardTuningClock (
   IN UINT8                          Slot
   )
 {
-  EFI_STATUS  Status;
-  UINT8       HostCtrl2;
-  UINT8       Retry;
+  SD_MMC_HC_PRIVATE_DATA  *Private;
+  EFI_STATUS              Status;
+  UINT8                   HostCtrl2;
+  UINT8                   Retry;
+
+  Private = SD_MMC_HC_PRIVATE_FROM_THIS (PassThru);
+
+  if ((mOverride != NULL) &&
+      (mOverride->Version >= EDKII_SD_MMC_OVERRIDE_PROTOCOL_TUNING_VERSION) &&
+      (mOverride->ExecuteTuning != NULL))
+  {
+    Private->Slot[Slot].PlatformTuning = TRUE;
+    Status = mOverride->ExecuteTuning (
+                          Private->ControllerHandle,
+                          Slot,
+                          PassThru,
+                          FALSE,
+                          4
+                          );
+    Private->Slot[Slot].PlatformTuning = FALSE;
+    if (Status != EFI_UNSUPPORTED) {
+      return Status;
+    }
+  }
 
   //
   // Notify the host that the sampling clock tuning procedure starts.

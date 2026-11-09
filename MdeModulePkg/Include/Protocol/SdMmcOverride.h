@@ -15,7 +15,8 @@
 #define EDKII_SD_MMC_OVERRIDE_PROTOCOL_GUID \
   { 0xeaf9e3c1, 0xc9cd, 0x46db, { 0xa5, 0xe5, 0x5a, 0x12, 0x4c, 0x83, 0x23, 0x23 } }
 
-#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_VERSION  0x3
+#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_TUNING_VERSION  0x4
+#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_VERSION  EDKII_SD_MMC_OVERRIDE_PROTOCOL_TUNING_VERSION
 
 typedef struct _EDKII_SD_MMC_OVERRIDE EDKII_SD_MMC_OVERRIDE;
 
@@ -139,6 +140,32 @@ EFI_STATUS
   IN OUT  VOID                           *PhaseData
   );
 
+/**
+  Override sampling-clock tuning for a controller with a platform PHY.
+
+  PassThru can issue synchronous tuning commands during card initialization.
+  The platform must leave the command and data paths ready for subsequent I/O.
+
+  @param[in] ControllerHandle  The controller handle.
+  @param[in] Slot              The zero-based slot index.
+  @param[in] PassThru          The controller's SD/MMC command interface.
+  @param[in] IsEmmc            TRUE for eMMC CMD21, FALSE for SD CMD19.
+  @param[in] BusWidth          The active bus width, in bits.
+
+  @retval EFI_SUCCESS         Platform tuning completed.
+  @retval EFI_UNSUPPORTED     Use the standard SDHCI tuning procedure.
+  @retval Others              Platform tuning failed.
+**/
+typedef
+EFI_STATUS
+(EFIAPI *EDKII_SD_MMC_EXECUTE_TUNING)(
+  IN EFI_HANDLE                       ControllerHandle,
+  IN UINT8                            Slot,
+  IN EFI_SD_MMC_PASS_THRU_PROTOCOL    *PassThru,
+  IN BOOLEAN                          IsEmmc,
+  IN UINT8                            BusWidth
+  );
+
 struct _EDKII_SD_MMC_OVERRIDE {
   //
   // Protocol version of this implementation
@@ -152,6 +179,8 @@ struct _EDKII_SD_MMC_OVERRIDE {
   // Callback to invoke SD/MMC override hooks
   //
   EDKII_SD_MMC_NOTIFY_PHASE    NotifyPhase;
+  // Optional, present in protocol version 4 and later.
+  EDKII_SD_MMC_EXECUTE_TUNING  ExecuteTuning;
 };
 
 extern EFI_GUID  gEdkiiSdMmcOverrideProtocolGuid;
