@@ -696,6 +696,30 @@ SdMmcPciHcDriverBindingStart (
       }
     }
 
+    if ((mOverride != NULL) && (mOverride->NotifyPhase != NULL) &&
+        (mOverride->Version >= EDKII_SD_MMC_OVERRIDE_PROTOCOL_DMA_BOUNDARY_VERSION))
+    {
+      Status = mOverride->NotifyPhase (
+                            Controller,
+                            Slot,
+                            EdkiiSdMmcGetDmaBoundary,
+                            &Private->Slot[Slot].DmaBoundary
+                            );
+      if (Status == EFI_UNSUPPORTED) {
+        Private->Slot[Slot].DmaBoundary = 0;
+      } else if (EFI_ERROR (Status)) {
+        continue;
+      }
+
+      if ((Private->Slot[Slot].DmaBoundary != 0) &&
+          ((Private->Slot[Slot].DmaBoundary < 8) ||
+           ((Private->Slot[Slot].DmaBoundary & (Private->Slot[Slot].DmaBoundary - 1)) != 0)))
+      {
+        DEBUG ((DEBUG_ERROR, "Invalid ADMA boundary for slot %u\n", Slot));
+        continue;
+      }
+    }
+
     DumpCapabilityReg (Slot, &Private->Capability[Slot]);
     DEBUG ((
       DEBUG_INFO,

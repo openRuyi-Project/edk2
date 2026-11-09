@@ -16,7 +16,8 @@
   { 0xeaf9e3c1, 0xc9cd, 0x46db, { 0xa5, 0xe5, 0x5a, 0x12, 0x4c, 0x83, 0x23, 0x23 } }
 
 #define EDKII_SD_MMC_OVERRIDE_PROTOCOL_TUNING_VERSION  0x4
-#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_VERSION  EDKII_SD_MMC_OVERRIDE_PROTOCOL_TUNING_VERSION
+#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_DMA_BOUNDARY_VERSION  0x5
+#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_VERSION  EDKII_SD_MMC_OVERRIDE_PROTOCOL_DMA_BOUNDARY_VERSION
 
 typedef struct _EDKII_SD_MMC_OVERRIDE EDKII_SD_MMC_OVERRIDE;
 
@@ -90,7 +91,10 @@ typedef enum {
   EdkiiSdMmcInitHostPost,
   EdkiiSdMmcUhsSignaling,
   EdkiiSdMmcSwitchClockFreqPost,
-  EdkiiSdMmcGetOperatingParam
+  EdkiiSdMmcGetOperatingParam,
+  // Version 5: PhaseData points to a UINT64 ADMA boundary. Zero means none.
+  // A nonzero boundary must be a power of two, at least 8 bytes.
+  EdkiiSdMmcGetDmaBoundary
 } EDKII_SD_MMC_PHASE_TYPE;
 
 /**
