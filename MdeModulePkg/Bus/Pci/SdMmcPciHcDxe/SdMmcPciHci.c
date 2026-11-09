@@ -2356,7 +2356,11 @@ SdMmcSoftwareReset (
     SwReset |= BIT1;
   }
 
-  if ((ErrIntStatus & 0x70) != 0) {
+  //
+  // An ADMA error also stops the data engine. Reset it before releasing
+  // transfer buffers or starting another data command.
+  //
+  if ((ErrIntStatus & (0x70 | BIT9)) != 0) {
     SwReset |= BIT2;
   }
 
