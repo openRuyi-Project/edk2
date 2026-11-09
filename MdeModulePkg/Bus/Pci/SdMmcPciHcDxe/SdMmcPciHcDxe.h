@@ -85,6 +85,7 @@ typedef struct {
   SD_MMC_CARD_TYPE                     CardType;
   UINT64                               CurrentFreq;
   EDKII_SD_MMC_OPERATING_PARAMETERS    OperatingParameters;
+  BOOLEAN                              PlatformTuning;
 } SD_MMC_HC_SLOT;
 
 typedef struct {
