@@ -2433,9 +2433,13 @@ SdMmcCheckAndRecoverErrors (
     return Status;
   }
 
-  DEBUG (((Private->Slot[Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_ERROR), "Error reported by SDHCI\n"));
-  DEBUG (((Private->Slot[Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_ERROR), "Interrupt status = %X\n", IntStatus));
-  DEBUG (((Private->Slot[Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_ERROR), "Error interrupt status = %X\n", ErrIntStatus));
+  DEBUG ((
+    Private->Slot[Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_ERROR,
+    "SDHCI slot %u: interrupt=%04x error=%04x\n",
+    Slot,
+    IntStatus,
+    ErrIntStatus
+    ));
 
   //
   // If the data timeout error is reported
@@ -2863,8 +2867,14 @@ Done:
   if (Status != EFI_NOT_READY) {
     SdMmcHcLedOnOff (Private->PciIo, Trb->Slot, FALSE);
     if (EFI_ERROR (Status)) {
-      DEBUG (((Private->Slot[Trb->Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_ERROR), "TRB failed with %r\n", Status));
-      SdMmcPrintTrb (Private->Slot[Trb->Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_ERROR, Trb);
+      DEBUG ((
+        Private->Slot[Trb->Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_ERROR,
+        "SDHCI slot %u CMD%u: %r\n",
+        Trb->Slot,
+        Packet->SdMmcCmdBlk->CommandIndex,
+        Status
+        ));
+      SdMmcPrintTrb (Private->Slot[Trb->Slot].PlatformTuning ? DEBUG_VERBOSE : DEBUG_INFO, Trb);
     } else {
       DEBUG ((DEBUG_VERBOSE, "TRB success\n"));
       SdMmcPrintTrb (DEBUG_VERBOSE, Trb);
