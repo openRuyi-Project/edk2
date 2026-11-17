@@ -86,6 +86,7 @@ typedef struct {
   UINT64                               CurrentFreq;
   EDKII_SD_MMC_OPERATING_PARAMETERS    OperatingParameters;
   UINT64                               DmaBoundary;
+  EDKII_SD_MMC_SLOT_CONFIG             Config;
   BOOLEAN                              PlatformTuning;
 } SD_MMC_HC_SLOT;
 
