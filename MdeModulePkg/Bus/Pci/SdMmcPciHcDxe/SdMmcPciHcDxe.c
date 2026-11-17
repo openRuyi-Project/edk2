@@ -697,6 +697,20 @@ SdMmcPciHcDriverBindingStart (
     }
 
     if ((mOverride != NULL) && (mOverride->NotifyPhase != NULL) &&
+        (mOverride->Version >= EDKII_SD_MMC_OVERRIDE_PROTOCOL_SLOT_CONFIG_VERSION))
+    {
+      Status = mOverride->NotifyPhase (
+                            Controller,
+                            Slot,
+                            EdkiiSdMmcGetSlotConfig,
+                            &Private->Slot[Slot].Config
+                            );
+      if (EFI_ERROR (Status)) {
+        ZeroMem (&Private->Slot[Slot].Config, sizeof (Private->Slot[Slot].Config));
+      }
+    }
+
+    if ((mOverride != NULL) && (mOverride->NotifyPhase != NULL) &&
         (mOverride->Version >= EDKII_SD_MMC_OVERRIDE_PROTOCOL_DMA_BOUNDARY_VERSION))
     {
       Status = mOverride->NotifyPhase (

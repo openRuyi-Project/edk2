@@ -1249,6 +1249,10 @@ SdCardIdentification (
   BOOLEAN                        ForceVoltage33;
   BOOLEAN                        SdVersion1;
 
+  if (Private->Slot[Slot].Config.NoSd) {
+    return EFI_UNSUPPORTED;
+  }
+
   ForceVoltage33 = FALSE;
   SdVersion1     = FALSE;
 
@@ -1277,10 +1281,12 @@ Voltage33Retry:
   //
   // 3. Send SDIO Cmd5 to the device to the SDIO device OCR register.
   //
-  Status = SdioSendOpCond (PassThru, Slot, 0, FALSE);
-  if (!EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_INFO, "SdCardIdentification: Found SDIO device, ignore it as we don't support\n"));
-    return EFI_DEVICE_ERROR;
+  if (!Private->Slot[Slot].Config.NoSdio) {
+    Status = SdioSendOpCond (PassThru, Slot, 0, FALSE);
+    if (!EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_INFO, "SdCardIdentification: Found SDIO device, ignore it as we don't support\n"));
+      return EFI_DEVICE_ERROR;
+    }
   }
 
   //

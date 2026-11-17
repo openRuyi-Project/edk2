@@ -993,38 +993,40 @@ EmmcIsBusTimingSupported (
   )
 {
   BOOLEAN             Supported;
+  UINT8               DeviceType;
   SD_MMC_HC_SLOT_CAP  *Capabilities;
 
   Capabilities = &Private->Capability[SlotIndex];
 
-  Supported = FALSE;
+  DeviceType = ExtCsd->DeviceType & ~Private->Slot[SlotIndex].Config.ExcludedEmmcDeviceTypes;
+  Supported  = FALSE;
   switch (BusTiming) {
     case SdMmcMmcHs400:
-      if ((((ExtCsd->DeviceType & (BIT6 | BIT7))  != 0) && (Capabilities->Hs400 != 0)) && (Capabilities->BusWidth8 != 0)) {
+      if ((((DeviceType & (BIT6 | BIT7))  != 0) && (Capabilities->Hs400 != 0)) && (Capabilities->BusWidth8 != 0)) {
         Supported = TRUE;
       }
 
       break;
     case SdMmcMmcHs200:
-      if ((((ExtCsd->DeviceType & (BIT4 | BIT5))  != 0) && (Capabilities->Sdr104 != 0))) {
+      if ((((DeviceType & (BIT4 | BIT5))  != 0) && (Capabilities->Sdr104 != 0))) {
         Supported = TRUE;
       }
 
       break;
     case SdMmcMmcHsDdr:
-      if ((((ExtCsd->DeviceType & (BIT2 | BIT3))  != 0) && (Capabilities->Ddr50 != 0))) {
+      if ((((DeviceType & (BIT2 | BIT3))  != 0) && (Capabilities->Ddr50 != 0))) {
         Supported = TRUE;
       }
 
       break;
     case SdMmcMmcHsSdr:
-      if ((((ExtCsd->DeviceType & BIT1)  != 0) && (Capabilities->HighSpeed != 0))) {
+      if ((((DeviceType & BIT1)  != 0) && (Capabilities->HighSpeed != 0))) {
         Supported = TRUE;
       }
 
       break;
     case SdMmcMmcLegacy:
-      if ((ExtCsd->DeviceType & BIT0) != 0) {
+      if ((DeviceType & BIT0) != 0) {
         Supported = TRUE;
       }
 
@@ -1350,6 +1352,10 @@ EmmcIdentification (
 
   PciIo    = Private->PciIo;
   PassThru = &Private->PassThru;
+
+  if (Private->Slot[Slot].Config.NoMmc) {
+    return EFI_UNSUPPORTED;
+  }
 
   Status = EmmcReset (PassThru, Slot);
   if (EFI_ERROR (Status)) {

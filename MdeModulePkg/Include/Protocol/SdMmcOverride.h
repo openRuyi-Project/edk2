@@ -17,7 +17,8 @@
 
 #define EDKII_SD_MMC_OVERRIDE_PROTOCOL_TUNING_VERSION  0x4
 #define EDKII_SD_MMC_OVERRIDE_PROTOCOL_DMA_BOUNDARY_VERSION  0x5
-#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_VERSION  EDKII_SD_MMC_OVERRIDE_PROTOCOL_DMA_BOUNDARY_VERSION
+#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_SLOT_CONFIG_VERSION   0x6
+#define EDKII_SD_MMC_OVERRIDE_PROTOCOL_VERSION  EDKII_SD_MMC_OVERRIDE_PROTOCOL_SLOT_CONFIG_VERSION
 
 typedef struct _EDKII_SD_MMC_OVERRIDE EDKII_SD_MMC_OVERRIDE;
 
@@ -84,6 +85,15 @@ typedef enum {
   SdMmcMmcHs400,
 } SD_MMC_BUS_MODE;
 
+// Optional board wiring restrictions. Zero retains standard discovery.
+typedef struct {
+  BOOLEAN    NoMmc;
+  BOOLEAN    NoSd;
+  BOOLEAN    NoSdio;
+  // EXT_CSD DEVICE_TYPE bits unavailable at the board's signaling voltage.
+  UINT8      ExcludedEmmcDeviceTypes;
+} EDKII_SD_MMC_SLOT_CONFIG;
+
 typedef enum {
   EdkiiSdMmcResetPre,
   EdkiiSdMmcResetPost,
@@ -94,7 +104,9 @@ typedef enum {
   EdkiiSdMmcGetOperatingParam,
   // Version 5: PhaseData points to a UINT64 ADMA boundary. Zero means none.
   // A nonzero boundary must be a power of two, at least 8 bytes.
-  EdkiiSdMmcGetDmaBoundary
+  EdkiiSdMmcGetDmaBoundary,
+  // Version 6: PhaseData points to an EDKII_SD_MMC_SLOT_CONFIG.
+  EdkiiSdMmcGetSlotConfig
 } EDKII_SD_MMC_PHASE_TYPE;
 
 /**
