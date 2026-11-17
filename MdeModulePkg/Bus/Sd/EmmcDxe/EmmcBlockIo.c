@@ -88,8 +88,9 @@ EmmcSelect (
   Packet.SdMmcStatusBlk = &SdMmcStatusBlk;
   Packet.Timeout        = EMMC_GENERIC_TIMEOUT;
 
+  // CMD7 with RCA zero deselects all cards and has no response.
   SdMmcCmdBlk.CommandIndex    = EMMC_SELECT_DESELECT_CARD;
-  SdMmcCmdBlk.CommandType     = SdMmcCommandTypeAc;
+  SdMmcCmdBlk.CommandType     = (Rca == 0) ? SdMmcCommandTypeBc : SdMmcCommandTypeAc;
   SdMmcCmdBlk.ResponseType    = SdMmcResponseTypeR1;
   SdMmcCmdBlk.CommandArgument = (UINT32)Rca << 16;
 
