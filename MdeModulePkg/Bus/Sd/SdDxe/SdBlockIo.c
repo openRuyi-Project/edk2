@@ -129,8 +129,9 @@ SdSelect (
   Packet.SdMmcStatusBlk = &SdMmcStatusBlk;
   Packet.Timeout        = SD_GENERIC_TIMEOUT;
 
+  // CMD7 with RCA zero deselects all cards and has no response.
   SdMmcCmdBlk.CommandIndex = SD_SELECT_DESELECT_CARD;
-  SdMmcCmdBlk.CommandType  = SdMmcCommandTypeAc;
+  SdMmcCmdBlk.CommandType  = (Rca == 0) ? SdMmcCommandTypeBc : SdMmcCommandTypeAc;
   if (Rca != 0) {
     SdMmcCmdBlk.ResponseType = SdMmcResponseTypeR1b;
   }
