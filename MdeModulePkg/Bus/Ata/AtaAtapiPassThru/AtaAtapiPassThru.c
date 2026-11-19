@@ -832,6 +832,12 @@ ErrorExit:
     //
     // Remove all inserted ATA devices.
     //
+    PciIo->Attributes (
+             PciIo,
+             EfiPciIoAttributeOperationSet,
+             Instance->OriginalPciAttributes,
+             NULL
+             );
     DestroyDeviceInfoList (Instance);
     FreePool (Instance);
   }
@@ -1199,16 +1205,16 @@ EnumerateAttachedDevice (
   PCI_TYPE00  PciData;
   UINT8       ClassCode;
 
-  Status = EFI_SUCCESS;
-
   Status = Instance->PciIo->Pci.Read (
                                   Instance->PciIo,
                                   EfiPciIoWidthUint8,
-                                  PCI_CLASSCODE_OFFSET,
-                                  sizeof (PciData.Hdr.ClassCode),
-                                  PciData.Hdr.ClassCode
+                                  PCI_VENDOR_ID_OFFSET,
+                                  sizeof (PciData.Hdr),
+                                  &PciData.Hdr
                                   );
-  ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   ClassCode = PciData.Hdr.ClassCode[1];
 
@@ -1232,7 +1238,7 @@ EnumerateAttachedDevice (
       //
       Instance->Mode = EfiAtaAhciMode;
 
-      Status = AhciModeInitialization (Instance);
+      Status = AhciModeInitialization (Instance, &PciData.Hdr);
 
       if (EFI_ERROR (Status)) {
         Status = EFI_DEVICE_ERROR;
