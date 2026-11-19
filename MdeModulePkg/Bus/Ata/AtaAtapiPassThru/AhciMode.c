@@ -2205,6 +2205,7 @@ AhciPacketCommandExecute (
   Allocate transfer-related data struct which is used at AHCI mode.
 
   @param  PciIo                 The PCI IO protocol instance.
+  @param  Capability            Effective HBA capabilities after applying device quirks.
   @param  AhciRegisters         The pointer to the EFI_AHCI_REGISTERS.
 
 **/
@@ -2212,6 +2213,7 @@ EFI_STATUS
 EFIAPI
 AhciCreateTransferDescriptor (
   IN     EFI_PCI_IO_PROTOCOL  *PciIo,
+  IN     UINT32               Capability,
   IN OUT EFI_AHCI_REGISTERS   *AhciRegisters
   )
 {
@@ -2219,7 +2221,6 @@ AhciCreateTransferDescriptor (
   UINTN       Bytes;
   VOID        *Buffer;
 
-  UINT32                Capability;
   UINT32                PortImplementBitMap;
   UINT8                 MaxPortNumber;
   UINT8                 MaxCommandSlotNumber;
@@ -2233,14 +2234,10 @@ AhciCreateTransferDescriptor (
 
   Buffer = NULL;
   //
-  // Collect AHCI controller information
-  //
-  Capability = AhciReadReg (PciIo, EFI_AHCI_CAPABILITY_OFFSET);
-  //
   // Get the number of command slots per port supported by this HBA.
   //
   MaxCommandSlotNumber = (UINT8)(((Capability & 0x1F00) >> 8) + 1);
-  Support64Bit         = (BOOLEAN)(((Capability & BIT31) != 0) ? TRUE : FALSE);
+  Support64Bit         = (BOOLEAN)((Capability & EFI_AHCI_CAP_S64A) != 0);
 
   PortImplementBitMap = AhciReadReg (PciIo, EFI_AHCI_PI_OFFSET);
   //
@@ -2280,17 +2277,19 @@ AhciCreateTransferDescriptor (
                     &AhciRegisters->MapRFis
                     );
 
-  if (EFI_ERROR (Status) || (Bytes != MaxReceiveFisSize)) {
-    //
-    // Map error or unable to map the whole RFis buffer into a contiguous region.
-    //
+  if (EFI_ERROR (Status)) {
     Status = EFI_OUT_OF_RESOURCES;
     goto Error6;
   }
 
-  if ((!Support64Bit) && (AhciRFisPciAddr > 0x100000000ULL)) {
+  if (Bytes != MaxReceiveFisSize) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Error5;
+  }
+
+  if ((!Support64Bit) && (AhciRFisPciAddr > SIZE_4GB - Bytes)) {
     //
-    // The AHCI HBA doesn't support 64bit addressing, so should not get a >4G pci bus master address.
+    // The entire common buffer must be addressable by the HBA.
     //
     Status = EFI_DEVICE_ERROR;
     goto Error5;
@@ -2336,17 +2335,19 @@ AhciCreateTransferDescriptor (
                     &AhciRegisters->MapCmdList
                     );
 
-  if (EFI_ERROR (Status) || (Bytes != MaxCommandListSize)) {
-    //
-    // Map error or unable to map the whole cmd list buffer into a contiguous region.
-    //
+  if (EFI_ERROR (Status)) {
     Status = EFI_OUT_OF_RESOURCES;
     goto Error4;
   }
 
-  if ((!Support64Bit) && (AhciCmdListPciAddr > 0x100000000ULL)) {
+  if (Bytes != MaxCommandListSize) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Error3;
+  }
+
+  if ((!Support64Bit) && (AhciCmdListPciAddr > SIZE_4GB - Bytes)) {
     //
-    // The AHCI HBA doesn't support 64bit addressing, so should not get a >4G pci bus master address.
+    // The entire common buffer must be addressable by the HBA.
     //
     Status = EFI_DEVICE_ERROR;
     goto Error3;
@@ -2393,17 +2394,19 @@ AhciCreateTransferDescriptor (
                     &AhciRegisters->MapCommandTable
                     );
 
-  if (EFI_ERROR (Status) || (Bytes != MaxCommandTableSize)) {
-    //
-    // Map error or unable to map the whole cmd list buffer into a contiguous region.
-    //
+  if (EFI_ERROR (Status)) {
     Status = EFI_OUT_OF_RESOURCES;
     goto Error2;
   }
 
-  if ((!Support64Bit) && (AhciCommandTablePciAddr > 0x100000000ULL)) {
+  if (Bytes != MaxCommandTableSize) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Error1;
+  }
+
+  if ((!Support64Bit) && (AhciCommandTablePciAddr > SIZE_4GB - Bytes)) {
     //
-    // The AHCI HBA doesn't support 64bit addressing, so should not get a >4G pci bus master address.
+    // The entire common buffer must be addressable by the HBA.
     //
     Status = EFI_DEVICE_ERROR;
     goto Error1;
@@ -2857,12 +2860,14 @@ AhciPuisEnable (
   The function is designed to initialize ATA host controller.
 
   @param[in]  Instance          A pointer to the ATA_ATAPI_PASS_THRU_INSTANCE instance.
+  @param[in]  PciHeader         PCI header of the AHCI controller.
 
 **/
 EFI_STATUS
 EFIAPI
 AhciModeInitialization (
-  IN  ATA_ATAPI_PASS_THRU_INSTANCE  *Instance
+  IN  ATA_ATAPI_PASS_THRU_INSTANCE         *Instance,
+  IN  CONST PCI_DEVICE_INDEPENDENT_REGION  *PciHeader
   )
 {
   EFI_STATUS                        Status;
@@ -2885,7 +2890,7 @@ AhciModeInitialization (
   UINT32                   PhyDetectDelay;
   UINT32                   Value;
 
-  if (Instance == NULL) {
+  if ((Instance == NULL) || (PciHeader == NULL)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -2910,6 +2915,27 @@ AhciModeInitialization (
 
   if ((Value & EFI_AHCI_GHC_ENABLE) == 0) {
     AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_ENABLE);
+  }
+
+  //
+  // JMicron JMB582 and JMB585 advertise S64A but can corrupt data when
+  // the device address exceeds 32 bits. Clear inherited DAC as well.
+  //
+  if ((PciHeader->VendorId == 0x197B) &&
+      ((PciHeader->DeviceId == 0x0582) || (PciHeader->DeviceId == 0x0585)))
+  {
+    Capability &= ~EFI_AHCI_CAP_S64A;
+    if ((Instance->OriginalPciAttributes & EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE) != 0) {
+      Status = PciIo->Attributes (
+                        PciIo,
+                        EfiPciIoAttributeOperationDisable,
+                        EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE,
+                        NULL
+                        );
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
+    }
   }
 
   //
@@ -2944,7 +2970,7 @@ AhciModeInitialization (
   PortImplementBitMap = AhciReadReg (PciIo, EFI_AHCI_PI_OFFSET);
 
   AhciRegisters = &Instance->AhciRegisters;
-  Status        = AhciCreateTransferDescriptor (PciIo, AhciRegisters);
+  Status        = AhciCreateTransferDescriptor (PciIo, Capability, AhciRegisters);
 
   if (EFI_ERROR (Status)) {
     return EFI_OUT_OF_RESOURCES;

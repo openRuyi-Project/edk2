@@ -1059,12 +1059,14 @@ IdeModeInitialization (
   The function is designed to initialize ATA host controller.
 
   @param[in]  Instance          A pointer to the ATA_ATAPI_PASS_THRU_INSTANCE instance.
+  @param[in]  PciHeader         PCI header of the AHCI controller.
 
 **/
 EFI_STATUS
 EFIAPI
 AhciModeInitialization (
-  IN  ATA_ATAPI_PASS_THRU_INSTANCE  *Instance
+  IN  ATA_ATAPI_PASS_THRU_INSTANCE         *Instance,
+  IN  CONST PCI_DEVICE_INDEPENDENT_REGION  *PciHeader
   );
 
 /**
