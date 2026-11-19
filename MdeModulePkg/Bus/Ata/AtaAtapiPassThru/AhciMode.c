@@ -1028,7 +1028,12 @@ AhciPioTransfer (
                        &Map
                        );
 
-  if (EFI_ERROR (Status) || (DataCount != MapLength)) {
+  if (EFI_ERROR (Status)) {
+    return EFI_BAD_BUFFER_SIZE;
+  }
+
+  if (DataCount != MapLength) {
+    PciIo->Unmap (PciIo, Map);
     return EFI_BAD_BUFFER_SIZE;
   }
 
@@ -1218,7 +1223,12 @@ AhciDmaTransfer (
                          &Map
                          );
 
-    if (EFI_ERROR (Status) || (DataCount != MapLength)) {
+    if (EFI_ERROR (Status)) {
+      return EFI_BAD_BUFFER_SIZE;
+    }
+
+    if (DataCount != MapLength) {
+      PciIo->Unmap (PciIo, Map);
       return EFI_BAD_BUFFER_SIZE;
     }
 
