@@ -1674,24 +1674,39 @@ AhciReset (
   IN  UINT64               Timeout
   )
 {
-  UINT64  Delay;
-  UINT32  Value;
+  EFI_STATUS  Status;
+  UINT64      Delay;
+  UINT32      Value;
 
   //
   // Make sure that GHC.AE bit is set before accessing any AHCI registers.
   //
-  Value = AhciReadReg (PciIo, EFI_AHCI_GHC_OFFSET);
-
-  if ((Value & EFI_AHCI_GHC_ENABLE) == 0) {
-    AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_ENABLE);
+  Status = PciIo->Mem.Read (PciIo, EfiPciIoWidthUint32, EFI_AHCI_BAR_INDEX, EFI_AHCI_GHC_OFFSET, 1, &Value);
+  if (EFI_ERROR (Status)) {
+    return Status;
   }
 
-  AhciOrReg (PciIo, EFI_AHCI_GHC_OFFSET, EFI_AHCI_GHC_RESET);
+  if ((Value & EFI_AHCI_GHC_ENABLE) == 0) {
+    Value |= EFI_AHCI_GHC_ENABLE;
+    Status = PciIo->Mem.Write (PciIo, EfiPciIoWidthUint32, EFI_AHCI_BAR_INDEX, EFI_AHCI_GHC_OFFSET, 1, &Value);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  Value |= EFI_AHCI_GHC_RESET;
+  Status = PciIo->Mem.Write (PciIo, EfiPciIoWidthUint32, EFI_AHCI_BAR_INDEX, EFI_AHCI_GHC_OFFSET, 1, &Value);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   Delay = DivU64x32 (Timeout, 1000) + 1;
 
   do {
-    Value = AhciReadReg (PciIo, EFI_AHCI_GHC_OFFSET);
+    Status = PciIo->Mem.Read (PciIo, EfiPciIoWidthUint32, EFI_AHCI_BAR_INDEX, EFI_AHCI_GHC_OFFSET, 1, &Value);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
 
     if ((Value & EFI_AHCI_GHC_RESET) == 0) {
       break;

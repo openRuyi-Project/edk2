@@ -633,6 +633,45 @@ AtaAtapiPassThruSupported (
 }
 
 /**
+  Release the three common buffers after the HBA can no longer access them.
+**/
+STATIC
+VOID
+AhciFreeTransferDescriptors (
+  IN EFI_PCI_IO_PROTOCOL  *PciIo,
+  IN EFI_AHCI_REGISTERS   *AhciRegisters
+  )
+{
+  PciIo->Unmap (
+           PciIo,
+           AhciRegisters->MapCommandTable
+           );
+  PciIo->FreeBuffer (
+           PciIo,
+           EFI_SIZE_TO_PAGES ((UINTN)AhciRegisters->MaxCommandTableSize),
+           AhciRegisters->AhciCommandTable
+           );
+  PciIo->Unmap (
+           PciIo,
+           AhciRegisters->MapCmdList
+           );
+  PciIo->FreeBuffer (
+           PciIo,
+           EFI_SIZE_TO_PAGES ((UINTN)AhciRegisters->MaxCommandListSize),
+           AhciRegisters->AhciCmdList
+           );
+  PciIo->Unmap (
+           PciIo,
+           AhciRegisters->MapRFis
+           );
+  PciIo->FreeBuffer (
+           PciIo,
+           EFI_SIZE_TO_PAGES ((UINTN)AhciRegisters->MaxReceiveFisSize),
+           AhciRegisters->AhciRFis
+           );
+}
+
+/**
   Starts a device controller or a bus controller.
 
   The Start() function is designed to be invoked from the EFI boot service ConnectController().
@@ -676,16 +715,20 @@ AtaAtapiPassThruStart (
   )
 {
   EFI_STATUS                        Status;
+  EFI_STATUS                        FailureStatus;
   EFI_IDE_CONTROLLER_INIT_PROTOCOL  *IdeControllerInit;
   ATA_ATAPI_PASS_THRU_INSTANCE      *Instance;
   EFI_PCI_IO_PROTOCOL               *PciIo;
   UINT64                            EnabledPciAttributes;
   UINT64                            OriginalPciAttributes;
+  BOOLEAN                           AttributesEnabled;
 
   Status                = EFI_SUCCESS;
   IdeControllerInit     = NULL;
   Instance              = NULL;
   OriginalPciAttributes = 0;
+  AttributesEnabled     = FALSE;
+  FailureStatus         = EFI_UNSUPPORTED;
 
   DEBUG ((DEBUG_INFO, "==AtaAtapiPassThru Start== Controller = %x\n", Controller));
 
@@ -746,6 +789,8 @@ AtaAtapiPassThruStart (
   if (EFI_ERROR (Status)) {
     goto ErrorExit;
   }
+
+  AttributesEnabled = TRUE;
 
   Status = gBS->LocateProtocol (&gEdkiiAtaAtapiPolicyProtocolGuid, NULL, (VOID **)&mAtaAtapiPolicy);
   if (EFI_ERROR (Status)) {
@@ -810,11 +855,52 @@ AtaAtapiPassThruStart (
                   &(Instance->ExtScsiPassThru),
                   NULL
                   );
-  ASSERT_EFI_ERROR (Status);
+  if (!EFI_ERROR (Status)) {
+    return EFI_SUCCESS;
+  }
 
-  return Status;
+  FailureStatus = Status;
+
+  //
+  // Enumeration has armed the port engines, but no caller owns the
+  // pass-through interfaces. Stop DMA before releasing their buffers.
+  //
+  if (Instance->Mode == EfiAtaAhciMode) {
+    if (!EFI_ERROR (AhciReset (PciIo, EFI_AHCI_BUS_RESET_TIMEOUT))) {
+      AhciFreeTransferDescriptors (PciIo, &Instance->AhciRegisters);
+    } else {
+      //
+      // A nonresponsive HBA may still reference these pages. Retain
+      // the mappings and request that bus mastering be disabled.
+      //
+      OriginalPciAttributes &= ~(UINT64)EFI_PCI_IO_ATTRIBUTE_BUS_MASTER;
+      DEBUG ((DEBUG_ERROR, "%a: HBA reset failed; retaining AHCI buffers\n", __func__));
+    }
+  }
 
 ErrorExit:
+  if (Instance != NULL) {
+    if (Instance->TimerEvent != NULL) {
+      gBS->CloseEvent (Instance->TimerEvent);
+    }
+
+    DestroyDeviceInfoList (Instance);
+    FreePool (Instance);
+  }
+
+  if (AttributesEnabled) {
+    Status = PciIo->Attributes (
+                      PciIo,
+                      EfiPciIoAttributeOperationSet,
+                      OriginalPciAttributes,
+                      NULL
+                      );
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "%a: failed to restore PCI attributes: %r\n", __func__, Status));
+      FailureStatus = Status;
+    }
+  }
+
   if (IdeControllerInit != NULL) {
     gBS->CloseProtocol (
            Controller,
@@ -824,25 +910,7 @@ ErrorExit:
            );
   }
 
-  if ((Instance != NULL) && (Instance->TimerEvent != NULL)) {
-    gBS->CloseEvent (Instance->TimerEvent);
-  }
-
-  if (Instance != NULL) {
-    //
-    // Remove all inserted ATA devices.
-    //
-    PciIo->Attributes (
-             PciIo,
-             EfiPciIoAttributeOperationSet,
-             Instance->OriginalPciAttributes,
-             NULL
-             );
-    DestroyDeviceInfoList (Instance);
-    FreePool (Instance);
-  }
-
-  return EFI_UNSUPPORTED;
+  return FailureStatus;
 }
 
 /**
@@ -884,7 +952,6 @@ AtaAtapiPassThruStop (
   ATA_ATAPI_PASS_THRU_INSTANCE  *Instance;
   EFI_ATA_PASS_THRU_PROTOCOL    *AtaPassThru;
   EFI_PCI_IO_PROTOCOL           *PciIo;
-  EFI_AHCI_REGISTERS            *AhciRegisters;
 
   DEBUG ((DEBUG_INFO, "==AtaAtapiPassThru Stop== Controller = %x\n", Controller));
 
@@ -957,34 +1024,7 @@ AtaAtapiPassThruStop (
   // for AHCI initialization should be released.
   //
   if (Instance->Mode == EfiAtaAhciMode) {
-    AhciRegisters = &Instance->AhciRegisters;
-    PciIo->Unmap (
-             PciIo,
-             AhciRegisters->MapCommandTable
-             );
-    PciIo->FreeBuffer (
-             PciIo,
-             EFI_SIZE_TO_PAGES ((UINTN)AhciRegisters->MaxCommandTableSize),
-             AhciRegisters->AhciCommandTable
-             );
-    PciIo->Unmap (
-             PciIo,
-             AhciRegisters->MapCmdList
-             );
-    PciIo->FreeBuffer (
-             PciIo,
-             EFI_SIZE_TO_PAGES ((UINTN)AhciRegisters->MaxCommandListSize),
-             AhciRegisters->AhciCmdList
-             );
-    PciIo->Unmap (
-             PciIo,
-             AhciRegisters->MapRFis
-             );
-    PciIo->FreeBuffer (
-             PciIo,
-             EFI_SIZE_TO_PAGES ((UINTN)AhciRegisters->MaxReceiveFisSize),
-             AhciRegisters->AhciRFis
-             );
+    AhciFreeTransferDescriptors (PciIo, &Instance->AhciRegisters);
   }
 
   //
