@@ -1054,6 +1054,16 @@ IdeModeInitialization (
   );
 
 /**
+  Reset the HBA and wait for its reset bit to clear.
+**/
+EFI_STATUS
+EFIAPI
+AhciReset (
+  IN EFI_PCI_IO_PROTOCOL  *PciIo,
+  IN UINT64               Timeout
+  );
+
+/**
   Initialize ATA host controller at AHCI mode.
 
   The function is designed to initialize ATA host controller.
