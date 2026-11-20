@@ -13,6 +13,13 @@
   .align 3
 
 //
+// sxstatus is available only on platforms advertising the T-Head extension.
+//
+ASM_FUNC (RiscVReadTHeadSxstatus)
+csrr a0, 0x5c0
+ret
+
+//
 // Local tlb flush all.
 //
 //
