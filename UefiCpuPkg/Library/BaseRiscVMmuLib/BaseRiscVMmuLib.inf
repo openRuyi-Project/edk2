@@ -28,4 +28,5 @@
 
 [Pcd]
   gUefiCpuPkgTokenSpaceGuid.PcdCpuRiscVMmuMaxSatpMode  ## CONSUMES
+  gUefiCpuPkgTokenSpaceGuid.PcdRiscVRequireMmu  ## CONSUMES
   gEfiMdePkgTokenSpaceGuid.PcdRiscVFeatureOverride     ## CONSUMES

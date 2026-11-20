@@ -472,6 +472,9 @@
   #  10 - 57bit mode.
   gUefiCpuPkgTokenSpaceGuid.PcdCpuRiscVMmuMaxSatpMode|10|UINT32|0x60000021
 
+  ## Reject Bare mode on platforms requiring page permissions in DXE.
+  gUefiCpuPkgTokenSpaceGuid.PcdRiscVRequireMmu|FALSE|BOOLEAN|0x60000024
+
 [PcdsFixedAtBuild.LOONGARCH64, PcdsPatchableInModule.LOONGARCH64, PcdsDynamic.LOONGARCH64, PcdsDynamicEx.LOONGARCH64]
   ## This PCD Contains the pointer to a CPU exception vector base address.
   # @Prompt The pointer to a CPU exception vector base address.
