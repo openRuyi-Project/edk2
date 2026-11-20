@@ -39,7 +39,57 @@
 #define RISCV_CPU_FEATURE_PBMT_BITMASK  BIT2
 #define PTE_PBMT_NC                     BIT61
 #define PTE_PBMT_IO                     BIT62
-#define PTE_PBMT_MASK                   (PTE_PBMT_NC | PTE_PBMT_IO)
+#define THEAD_PTE_STRONGLY_ORDERED      BIT63
+#define THEAD_PTE_CACHEABLE             BIT62
+#define THEAD_PTE_BUFFERABLE            BIT61
+#define THEAD_PTE_SHAREABLE             BIT60
+#define THEAD_SXSTATUS_MAEE             BIT21
+
+typedef struct {
+  UINT64    WriteBack;
+  UINT64    NonCacheable;
+  UINT64    Device;
+} RISCV_PAGE_MEMORY_TYPES;
+
+STATIC RISCV_PAGE_MEMORY_TYPES  mMemoryTypes;
+
+UINTN
+EFIAPI
+RiscVReadTHeadSxstatus (
+  VOID
+  );
+
+/**
+  Select the leaf PTE memory type encoding before building the first table.
+  PMA-only hardware uses zero for each type.
+**/
+STATIC
+VOID
+InitPageMemoryTypes (
+  VOID
+  )
+{
+  ZeroMem (&mMemoryTypes, sizeof (mMemoryTypes));
+  if (FixedPcdGetBool (PcdRiscVPlatformHasTHeadMae)) {
+    if ((RiscVReadTHeadSxstatus () & THEAD_SXSTATUS_MAEE) != 0) {
+      mMemoryTypes.WriteBack    = THEAD_PTE_CACHEABLE | THEAD_PTE_BUFFERABLE | THEAD_PTE_SHAREABLE;
+      mMemoryTypes.NonCacheable = THEAD_PTE_BUFFERABLE | THEAD_PTE_SHAREABLE;
+      mMemoryTypes.Device       = THEAD_PTE_STRONGLY_ORDERED | THEAD_PTE_SHAREABLE;
+    }
+  } else if ((PcdGet64 (PcdRiscVFeatureOverride) & RISCV_CPU_FEATURE_PBMT_BITMASK) != 0) {
+    mMemoryTypes.NonCacheable = PTE_PBMT_NC;
+    mMemoryTypes.Device       = PTE_PBMT_IO;
+  }
+}
+
+STATIC
+UINT64
+PageMemoryTypeMask (
+  VOID
+  )
+{
+  return mMemoryTypes.WriteBack | mMemoryTypes.NonCacheable | mMemoryTypes.Device;
+}
 
 STATIC UINTN  mModeSupport[] = { SATP_MODE_SV57, SATP_MODE_SV48, SATP_MODE_SV39, SATP_MODE_OFF };
 STATIC UINTN  mMaxRootTableLevel;
@@ -374,7 +424,7 @@ UpdateRegionMappingRecursive (
           Status = UpdateRegionMappingRecursive (
                      RegionStart & ~BlockMask,
                      (RegionStart | BlockMask) + 1,
-                     *Entry & (PTE_ATTRIBUTES_MASK | PTE_PBMT_MASK),
+                     *Entry & (PTE_ATTRIBUTES_MASK | PageMemoryTypeMask ()),
                      PTE_ATTRIBUTES_MASK,
                      TranslationTable,
                      Level + 1,
@@ -523,19 +573,13 @@ GcdAttributeToPageAttribute (
   OUT UINT64  *RiscVAttributes
   )
 {
-  UINT64   CacheTypeMask;
-  BOOLEAN  PmbtExtEnabled;
+  UINT64  CacheTypeMask;
 
   if (RiscVAttributes == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
   *RiscVAttributes = RISCV_PG_R | RISCV_PG_W | RISCV_PG_X;
-
-  PmbtExtEnabled = FALSE;
-  if ((PcdGet64 (PcdRiscVFeatureOverride) & RISCV_CPU_FEATURE_PBMT_BITMASK) != 0) {
-    PmbtExtEnabled = TRUE;
-  }
 
   // Determine protection attributes
   if ((GcdAttributes & EFI_MEMORY_RO) != 0) {
@@ -562,25 +606,23 @@ GcdAttributeToPageAttribute (
 
   switch (CacheTypeMask) {
     case EFI_MEMORY_UC:
-      if (PmbtExtEnabled) {
-        *RiscVAttributes |= PTE_PBMT_IO;
-      }
-
+      *RiscVAttributes |= mMemoryTypes.Device;
       break;
     case EFI_MEMORY_WC:
-      if (PmbtExtEnabled) {
-        *RiscVAttributes |= PTE_PBMT_NC;
-      } else {
-        DEBUG ((
-          DEBUG_VERBOSE,
-          "%a: EFI_MEMORY_WC set but Pmbt extension not available\n",
-          __func__
-          ));
+      *RiscVAttributes |= mMemoryTypes.NonCacheable;
+      break;
+    case EFI_MEMORY_WB:
+      *RiscVAttributes |= mMemoryTypes.WriteBack;
+      break;
+    case EFI_MEMORY_WT:
+    case EFI_MEMORY_WP:
+    case EFI_MEMORY_UCE:
+      if (mMemoryTypes.WriteBack != 0) {
+        return EFI_UNSUPPORTED;
       }
 
       break;
     default:
-      // Default PMA mode
       break;
   }
 
@@ -621,8 +663,8 @@ RiscVSetMemoryAttributes (
   }
 
   PageAttributesClear = PTE_ATTRIBUTES_MASK;
-  if ((PcdGet64 (PcdRiscVFeatureOverride) & RISCV_CPU_FEATURE_PBMT_BITMASK) != 0) {
-    PageAttributesClear |= PTE_PBMT_MASK;
+  if ((Attributes & EFI_CACHE_ATTRIBUTE_MASK) != 0) {
+    PageAttributesClear |= PageMemoryTypeMask ();
   }
 
   DEBUG ((
@@ -720,10 +762,10 @@ RiscVMmuSetSatpMode  (
 
     switch (MemoryMap[Index].GcdMemoryType) {
       case EfiGcdMemoryTypeMemoryMappedIo:
-        Attributes = RISCV_PG_R | RISCV_PG_W;
+        Attributes = RISCV_PG_R | RISCV_PG_W | mMemoryTypes.Device;
         break;
       case EfiGcdMemoryTypeSystemMemory:
-        Attributes = RISCV_PG_R | RISCV_PG_W | RISCV_PG_X;
+        Attributes = RISCV_PG_R | RISCV_PG_W | RISCV_PG_X | mMemoryTypes.WriteBack;
         break;
       default:
         continue;
@@ -792,6 +834,8 @@ RiscVConfigureMmu (
   UINTN       Idx;
 
   Status = EFI_SUCCESS;
+
+  InitPageMemoryTypes ();
 
   /* Try to setup MMU with highest mode as possible */
   for (Idx = 0; Idx < ARRAY_SIZE (mModeSupport); Idx++) {

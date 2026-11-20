@@ -475,6 +475,10 @@
   ## Reject Bare mode on platforms requiring page permissions in DXE.
   gUefiCpuPkgTokenSpaceGuid.PcdRiscVRequireMmu|FALSE|BOOLEAN|0x60000024
 
+  ## The target implements the T-Head sxstatus CSR and XTheadMae PTE format.
+  #  Read sxstatus.MAEE before using the extended attributes.
+  gUefiCpuPkgTokenSpaceGuid.PcdRiscVPlatformHasTHeadMae|FALSE|BOOLEAN|0x60000023
+
 [PcdsFixedAtBuild.LOONGARCH64, PcdsPatchableInModule.LOONGARCH64, PcdsDynamic.LOONGARCH64, PcdsDynamicEx.LOONGARCH64]
   ## This PCD Contains the pointer to a CPU exception vector base address.
   # @Prompt The pointer to a CPU exception vector base address.
