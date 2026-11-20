@@ -312,6 +312,7 @@ UpdateRegionMappingRecursive (
   )
 {
   EFI_STATUS  Status;
+  UINTN       AddressShift;
   UINT64      BlockShift;
   UINT64      BlockMask;
   UINT64      BlockEnd;
@@ -323,6 +324,7 @@ UpdateRegionMappingRecursive (
   ASSERT (Level < mMaxRootTableLevel);
   ASSERT (((RegionStart | RegionEnd) & EFI_PAGE_MASK) == 0);
 
+  AddressShift = 64 - (mMaxRootTableLevel * mBitPerLevel + RISCV_MMU_PAGE_SHIFT);
   BlockShift = (mMaxRootTableLevel - Level - 1) * mBitPerLevel + RISCV_MMU_PAGE_SHIFT;
   BlockMask  = MAX_ADDRESS >> (64 - BlockShift);
 
@@ -449,7 +451,14 @@ UpdateRegionMappingRecursive (
 
       EntryValue = SetPpnToPte (EntryValue, RegionStart);
       EntryValue = SetValidPte (EntryValue);
-      ReplaceTableEntry (Entry, EntryValue, RegionStart, TableIsLive);
+      // SFENCE.VMA takes a canonical virtual address, including when the
+      // platform maps a high physical MMIO window in the upper Sv39 half.
+      ReplaceTableEntry (
+        Entry,
+        EntryValue,
+        (UINT64)((INT64)(RegionStart << AddressShift) >> AddressShift),
+        TableIsLive
+        );
     }
   }
 
