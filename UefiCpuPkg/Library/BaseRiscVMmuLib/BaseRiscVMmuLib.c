@@ -667,7 +667,7 @@ RiscVMmuSetSatpMode  (
 
   switch (SatpMode) {
     case SATP_MODE_OFF:
-      return EFI_SUCCESS;
+      return FixedPcdGetBool (PcdRiscVRequireMmu) ? EFI_UNSUPPORTED : EFI_SUCCESS;
     case SATP_MODE_SV39:
       mMaxRootTableLevel = 3;
       mBitPerLevel       = 9;
@@ -701,29 +701,37 @@ RiscVMmuSetSatpMode  (
                                &NumberOfDescriptors,
                                &MemoryMap
                                );
-  ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    FreePages (TranslationTable, 1);
+    return Status;
+  }
 
   for (Index = 0; Index < NumberOfDescriptors; Index++) {
-    if (MemoryMap[Index].GcdMemoryType == EfiGcdMemoryTypeMemoryMappedIo) {
-      // Default Read/Write attribute for memory mapped IO
-      UpdateRegionMapping (
-        MemoryMap[Index].BaseAddress,
-        MemoryMap[Index].Length,
-        RISCV_PG_R | RISCV_PG_W,
-        PTE_ATTRIBUTES_MASK,
-        TranslationTable,
-        FALSE
-        );
-    } else if (MemoryMap[Index].GcdMemoryType == EfiGcdMemoryTypeSystemMemory) {
-      // Default Read/Write/Execute attribute for system memory
-      UpdateRegionMapping (
-        MemoryMap[Index].BaseAddress,
-        MemoryMap[Index].Length,
-        RISCV_PG_R | RISCV_PG_W | RISCV_PG_X,
-        PTE_ATTRIBUTES_MASK,
-        TranslationTable,
-        FALSE
-        );
+    UINT64  Attributes;
+
+    switch (MemoryMap[Index].GcdMemoryType) {
+      case EfiGcdMemoryTypeMemoryMappedIo:
+        Attributes = RISCV_PG_R | RISCV_PG_W;
+        break;
+      case EfiGcdMemoryTypeSystemMemory:
+        Attributes = RISCV_PG_R | RISCV_PG_W | RISCV_PG_X;
+        break;
+      default:
+        continue;
+    }
+
+    Status = UpdateRegionMapping (
+               MemoryMap[Index].BaseAddress,
+               MemoryMap[Index].Length,
+               Attributes,
+               PTE_ATTRIBUTES_MASK,
+               TranslationTable,
+               FALSE
+               );
+    if (EFI_ERROR (Status)) {
+      FreePageTablesRecursive (TranslationTable, 0);
+      FreePool (MemoryMap);
+      return Status;
     }
   }
 
@@ -746,6 +754,7 @@ RiscVMmuSetSatpMode  (
       __func__,
       SatpMode
       ));
+    SetInterruptState (InterruptState);
     FreePageTablesRecursive (TranslationTable, 0);
     return EFI_DEVICE_ERROR;
   }

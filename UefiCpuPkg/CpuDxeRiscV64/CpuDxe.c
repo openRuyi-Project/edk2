@@ -352,7 +352,10 @@ InitializeCpu (
   // Enable MMU
   //
   Status = RiscVConfigureMmu ();
-  ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "RISC-V MMU initialization failed: %r\n", Status));
+    return Status;
+  }
 
   //
   // Initialize FPU
