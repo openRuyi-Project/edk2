@@ -28,11 +28,15 @@
 
 [LibraryClasses]
   DebugLib
+  PcdLib
   RealTimeClockLib
   TimeBaseLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiRuntimeLib
+
+[FeaturePcd]
+  gEmbeddedTokenSpaceGuid.PcdRtcLibStoresTimeSettings  ## CONSUMES
 
 [Protocols]
   gEfiRealTimeClockArchProtocolGuid
