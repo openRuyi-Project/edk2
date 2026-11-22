@@ -11,6 +11,7 @@
 
 #include <PiDxe.h>
 #include <Library/DebugLib.h>
+#include <Library/PcdLib.h>
 #include <Library/RealTimeClockLib.h>
 #include <Library/TimeBaseLib.h>
 #include <Library/UefiLib.h>
@@ -94,6 +95,10 @@ SetTime (
 
   if ((Time == NULL) || !IsTimeValid (Time)) {
     return EFI_INVALID_PARAMETER;
+  }
+
+  if (FeaturePcdGet (PcdRtcLibStoresTimeSettings)) {
+    return LibSetTime (Time);
   }
 
   TimeSettingsChanged = FALSE;

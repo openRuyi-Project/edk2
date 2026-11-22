@@ -99,6 +99,8 @@
   gEdkiiEmbeddedGpioPpiGuid = { 0x21c3b115, 0x4e0b, 0x470c, { 0x85, 0xc7, 0xe1, 0x05, 0xa5, 0x75, 0xc9, 0x7b }}
 
 [PcdsFeatureFlag.common]
+  ## RealTimeClockLib saves the time zone and daylight flags with the time.
+  gEmbeddedTokenSpaceGuid.PcdRtcLibStoresTimeSettings|FALSE|BOOLEAN|0x00000061
   gEmbeddedTokenSpaceGuid.PcdPrePiProduceMemoryTypeInformationHob|FALSE|BOOLEAN|0x0000001b
   gEmbeddedTokenSpaceGuid.PcdGdbSerial|FALSE|BOOLEAN|0x00000053
   gEmbeddedTokenSpaceGuid.PcdAndroidBootLoadFile2|FALSE|BOOLEAN|0x0000005b
