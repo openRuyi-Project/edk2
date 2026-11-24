@@ -58,6 +58,9 @@
   ## NOTIFY
   gEfiHiiDatabaseProtocolGuid
 
+[FeaturePcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutFullScreen80x25 ## CONSUMES
+
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGlyphScale
   gEfiMdeModulePkgTokenSpaceGuid.PcdVideoHorizontalResolution ## SOMETIMES_CONSUMES

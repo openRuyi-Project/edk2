@@ -24,6 +24,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <Guid/MdeModuleHii.h>
 
+#include <GraphicsConsoleGeometry.h>
 #include <Protocol/HiiFont.h>
 #include <Protocol/HiiDatabase.h>
 
@@ -47,12 +48,10 @@ typedef union {
 typedef struct {
   UINTN     Columns;
   UINTN     Rows;
-  INTN      DeltaX;
-  INTN      DeltaY;
   UINT32    GopWidth;
   UINT32    GopHeight;
   UINT32    GopModeNumber;
-  UINT32    GlyphScale;
+  GRAPHICS_CONSOLE_VIEWPORT    View;
 } GRAPHICS_CONSOLE_MODE_DATA;
 
 typedef struct {

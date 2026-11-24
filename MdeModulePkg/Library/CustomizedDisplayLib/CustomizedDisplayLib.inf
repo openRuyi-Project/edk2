@@ -55,6 +55,9 @@
   gEdkiiPlatformLogoProtocolGuid
   gEfiGraphicsOutputProtocolGuid
 
+[FeaturePcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutFullScreen80x25 ## CONSUMES
+
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdFrontPageLogoEnable
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGlyphScale

@@ -1,4 +1,5 @@
 #include "CustomizedDisplayLibInternal.h"
+#include <GraphicsConsoleGeometry.h>
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/PlatformLogo.h>
 
@@ -14,9 +15,11 @@ PrintFrontPageLogo (
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL          *Scaled;
   UINT32                                Instance = 0;
   INTN                                  OffsetX, OffsetY;
-  UINTN                                 Columns, Rows, Scale, GlyphWidth, GlyphHeight;
+  UINTN                                 Columns, Rows, Scale;
   UINTN                                 Rightmost, Start, Width, Height, MaxWidth, MaxHeight;
   UINTN                                 ScreenX, ScreenY, Margin, DestinationX, DestinationY;
+  GRAPHICS_CONSOLE_VIEWPORT             View;
+  UINTN                                 Right, HeaderTop;
   CHAR16                                *Text;
   EFI_STATUS                            Status;
 
@@ -42,9 +45,7 @@ PrintFrontPageLogo (
   ScreenY     = Gop->Mode->Info->VerticalResolution;
   Scale       = MIN (ScreenX / (80 * EFI_GLYPH_WIDTH), ScreenY / (25 * EFI_GLYPH_HEIGHT));
   Scale       = MAX (1, MIN (Scale, PcdGet32 (PcdConOutGlyphScale)));
-  GlyphWidth  = EFI_GLYPH_WIDTH * Scale;
-  GlyphHeight = EFI_GLYPH_HEIGHT * Scale;
-  if ((Columns > ScreenX / GlyphWidth) || (Rows > ScreenY / GlyphHeight)) {
+  if (!GraphicsConsoleViewport (ScreenX, ScreenY, Columns, Rows, Scale, &View)) {
     return;
   }
 
@@ -76,9 +77,11 @@ PrintFrontPageLogo (
     }
   }
 
-  Margin    = 4 * Scale;
-  MaxWidth  = (gScreenDimensions.RightColumn - Rightmost) * GlyphWidth;
-  MaxHeight = FRONT_PAGE_HEADER_HEIGHT * GlyphHeight;
+  Margin    = 4 * MAX (1, MIN (View.Width / Columns / EFI_GLYPH_WIDTH, View.Height / Rows / EFI_GLYPH_HEIGHT));
+  Right     = GraphicsConsoleCellOffset (gScreenDimensions.RightColumn, Columns, View.Width);
+  HeaderTop = GraphicsConsoleCellOffset (gScreenDimensions.TopRow, Rows, View.Height);
+  MaxWidth  = Right - GraphicsConsoleCellOffset (Rightmost, Columns, View.Width);
+  MaxHeight = GraphicsConsoleCellOffset (gScreenDimensions.TopRow + FRONT_PAGE_HEADER_HEIGHT, Rows, View.Height) - HeaderTop;
   if ((MaxWidth <= 2 * Margin) || (MaxHeight <= 2 * Margin)) {
     return;
   }
@@ -118,8 +121,8 @@ PrintFrontPageLogo (
     goto Out;
   }
 
-  DestinationX = (ScreenX - Columns * GlyphWidth) / 2 + gScreenDimensions.RightColumn * GlyphWidth - Margin - Width;
-  DestinationY = (ScreenY - Rows * GlyphHeight) / 2 + gScreenDimensions.TopRow * GlyphHeight + Margin;
+  DestinationX = View.Left + Right - Margin - Width;
+  DestinationY = View.Top + HeaderTop + Margin;
   if ((Image.Flags & EFI_IMAGE_TRANSPARENT) != 0) {
     Status = Gop->Blt (Gop, Scaled, EfiBltVideoToBltBuffer,
                       DestinationX, DestinationY, 0, 0, Width, Height, 0);

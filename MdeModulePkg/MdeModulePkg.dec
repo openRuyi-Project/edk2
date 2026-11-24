@@ -778,6 +778,10 @@
   gEdkiiPciHostBridgeFixedResourceProtocolGuid = { 0xbb465aea, 0x5165, 0x4fdf, { 0xb4, 0xb0, 0xfd, 0x3a, 0x1d, 0x4c, 0xc6, 0xd8 } }
 
 [PcdsFeatureFlag]
+  ## Extend the graphics console's 80x25 text grid to the edges of the active GOP mode.
+  # @Prompt Fill the graphics output in 80x25 text mode.
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutFullScreen80x25|FALSE|BOOLEAN|0x40000154
+
   ## Indicates if the platform can support update capsule across a system reset.<BR><BR>
   #   TRUE  - Supports update capsule across a system reset.<BR>
   #   FALSE - Does not support update capsule across a system reset.<BR>
@@ -1816,8 +1820,8 @@
   # @Prompt Console output row.
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow|25|UINT32|0x40000006
 
-  ## Maximum integer glyph scale for the graphics text console. A value of 1
-  #  preserves the standard glyph size. Modes always retain at least 80x25.
+  ## Maximum integer glyph scale for centered graphics text modes. A value
+  #  of 1 uses the standard glyph size. Full-screen 80x25 scales to the GOP.
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutGlyphScale|1|UINT32|0x40000150
 
   ## This PCD defines the Console output column. The default value is 80 according to UEFI spec.
